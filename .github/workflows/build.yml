@@ -55,13 +55,16 @@ jobs:
       # CMake 4 trên runner (các file CMake của Qt còn khai báo tương thích
       # CMake < 3.5, thứ CMake 4 đã bỏ). Mức API tối thiểu 6.4 vẫn được job
       # Ubuntu ở trên kiểm chứng, còn artifact Windows mang theo Qt riêng.
+      # Chú ý cặp phiên bản - kiến trúc: từ Qt 6.8 Qt không phát hành bản dựng
+      # MSVC 2019 nữa, chỉ còn win64_msvc2022_64. Đặt sai tên kiến trúc thì
+      # aqtinstall không tìm thấy gói và bước này hỏng ngay.
       - name: Cài Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.8.3'
+          version: '6.8.*'
           host: windows
           target: desktop
-          arch: win64_msvc2019_64
+          arch: win64_msvc2022_64
 
       - name: Thông tin môi trường
         shell: pwsh
