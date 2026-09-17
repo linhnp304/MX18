@@ -73,10 +73,12 @@ jobs:
           Write-Host "QT_ROOT_DIR = $env:QT_ROOT_DIR"
           Get-ChildItem "$env:QT_ROOT_DIR/bin" -Filter "windeployqt*" | Select-Object Name
 
-      # CMAKE_POLICY_VERSION_MINIMUM là van an toàn của CMake 4 cho các gói còn
-      # khai báo chính sách cũ; CMake 3.x bỏ qua biến này nên đặt luôn cũng không sao.
+      # Đừng thêm -DCMAKE_POLICY_VERSION_MINIMUM ở đây. Qt 6.8 vốn đã cấu hình
+      # được với CMake 4, còn PowerShell của runner cắt mất phần thập phân của
+      # giá trị (3.5 thành 3) nên chính biến đó làm hỏng mọi lệnh cmake_policy()
+      # trong các file CMake của Qt.
       - name: Cấu hình
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Biên dịch
         run: cmake --build build --config Release --parallel
