@@ -4,6 +4,8 @@
 #include <QFileInfo>
 #include <QStringDecoder>
 
+#include <utility> // std::as_const — MSVC không kéo theo qua header Qt
+
 namespace {
 
 // Bảng 0x80..0xFF của CP1250 (Trung Âu). Ô bỏ trống trong bảng gốc thay bằng

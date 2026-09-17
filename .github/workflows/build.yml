@@ -13,13 +13,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Ubuntu 24.04 có sẵn Qt 6.4 trong kho apt - đúng mức Qt tối thiểu của dự án.
+      # Ubuntu 24.04 có sẵn Qt 6.4 trong kho apt - đúng mức Qt tối thiểu của dự án,
+      # nên job này cũng là phép thử "mã nguồn không dùng API mới hơn Qt 6.4".
       - name: Cài thư viện
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build \
             qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev
+
+      - name: Thông tin môi trường
+        run: |
+          cmake --version
+          g++ --version
+          qmake6 -query QT_VERSION || true
 
       - name: Cấu hình
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -44,17 +51,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Dùng Qt 6.8 LTS thay vì 6.4 trên Windows: Qt 6.4 không cấu hình được với
+      # CMake 4 trên runner (các file CMake của Qt còn khai báo tương thích
+      # CMake < 3.5, thứ CMake 4 đã bỏ). Mức API tối thiểu 6.4 vẫn được job
+      # Ubuntu ở trên kiểm chứng, còn artifact Windows mang theo Qt riêng.
       - name: Cài Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.4.3'
+          version: '6.8.3'
           host: windows
           target: desktop
           arch: win64_msvc2019_64
-          modules: ''
 
+      - name: Thông tin môi trường
+        shell: pwsh
+        run: |
+          cmake --version
+          Write-Host "QT_ROOT_DIR = $env:QT_ROOT_DIR"
+          Get-ChildItem "$env:QT_ROOT_DIR/bin" -Filter "windeployqt*" | Select-Object Name
+
+      # CMAKE_POLICY_VERSION_MINIMUM là van an toàn của CMake 4 cho các gói còn
+      # khai báo chính sách cũ; CMake 3.x bỏ qua biến này nên đặt luôn cũng không sao.
       - name: Cấu hình
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: Biên dịch
         run: cmake --build build --config Release --parallel
@@ -63,10 +82,40 @@ jobs:
       - name: Gói sản phẩm kèm thư viện Qt
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item build/Release/MX18.exe dist/
+
+          $exe = Get-ChildItem -Path build -Recurse -Filter MX18.exe | Select-Object -First 1
+          if (-not $exe) { throw "Khong tim thay MX18.exe trong thu muc build" }
+          Write-Host "File chay: $($exe.FullName)"
+          Copy-Item $exe.FullName dist/
           Copy-Item README.md dist/
-          & "$env:QT_ROOT_DIR/bin/windeployqt.exe" --release --no-translations --no-opengl-sw dist/MX18.exe
+
+          $deploy = "$env:QT_ROOT_DIR/bin/windeployqt.exe"
+          if (-not (Test-Path $deploy)) {
+            $cmd = Get-Command windeployqt.exe -ErrorAction SilentlyContinue
+            if (-not $cmd) { throw "Khong tim thay windeployqt.exe (QT_ROOT_DIR=$env:QT_ROOT_DIR)" }
+            $deploy = $cmd.Source
+          }
+          Write-Host "windeployqt: $deploy"
+          & $deploy --release --no-translations --no-opengl-sw dist/MX18.exe
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt tra ve ma loi $LASTEXITCODE" }
+
+          Get-ChildItem dist | Select-Object Name, Length
+
+      # Cấu hình hỏng thì in nhật ký của CMake ra ngay trong log Actions.
+      - name: Nhật ký CMake khi lỗi
+        if: failure()
+        shell: pwsh
+        run: |
+          foreach ($f in @("build/CMakeFiles/CMakeConfigureLog.yaml",
+                           "build/CMakeFiles/CMakeError.log",
+                           "build/CMakeFiles/CMakeOutput.log")) {
+            if (Test-Path $f) {
+              Write-Host "===== $f ====="
+              Get-Content $f -Tail 120
+            }
+          }
 
       - uses: actions/upload-artifact@v4
         with:

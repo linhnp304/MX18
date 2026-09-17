@@ -10,6 +10,8 @@
 
 #include <cmath>
 
+#include <utility> // std::as_const — MSVC không kéo theo qua header Qt
+
 namespace {
 
 // Sai số của từng mức chi tiết, tính bằng km trên mặt phẳng tâm đài.

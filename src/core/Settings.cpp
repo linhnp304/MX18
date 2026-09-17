@@ -7,6 +7,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include <utility> // std::as_const — MSVC không kéo theo qua header Qt
+
 namespace {
 
 QString colorToHex(const QColor &c) { return c.name(QColor::HexRgb).toUpper(); }

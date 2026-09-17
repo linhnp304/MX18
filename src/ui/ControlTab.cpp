@@ -6,6 +6,8 @@
 #include <QScrollArea>
 #include <QVBoxLayout>
 
+#include <utility> // std::as_const — MSVC không kéo theo qua header Qt
+
 ControlTab::ControlTab(QWidget *parent)
     : QWidget(parent)
 {

@@ -64,6 +64,11 @@ Artifact `MX18-windows-x64` do GitHub Actions dựng đã kèm đầy đủ thư
 (`windeployqt`): giải nén, đặt cạnh thư mục dữ liệu rồi chạy `MX18.exe`, không
 cần cài thêm gì.
 
+> GitHub Actions dựng bản Windows bằng **Qt 6.8 LTS** chứ không phải 6.4, vì các
+> file CMake của Qt 6.4 không còn cấu hình được với CMake 4 trên runner. Mức API
+> tối thiểu **Qt 6.4** vẫn được job Ubuntu kiểm chứng (Ubuntu 24.04 đóng gói đúng
+> Qt 6.4), nên mã nguồn vẫn biên dịch được bằng Qt 6.4 trên máy có CMake 3.x.
+
 ## Thư mục chạy
 
 Đường dẫn dữ liệu tính **tương đối với file chạy**:

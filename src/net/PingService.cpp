@@ -4,6 +4,8 @@
 #include <QThread>
 #include <QTimer>
 
+#include <utility> // std::as_const — MSVC không kéo theo qua header Qt
+
 namespace {
 
 constexpr int kPeriodMs = 3000;
