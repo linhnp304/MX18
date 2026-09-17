@@ -12,12 +12,16 @@ SplashWindow::SplashWindow(const QString &imagePath, const QString &caption, QWi
     m_image.load(imagePath);
     if (m_image.isNull()) {
         // Thiếu ảnh thì vẫn phải chạy được: dựng nền tối cỡ vừa phải.
-        m_image = QPixmap(640, 360);
+        m_image = QPixmap(1200, 1200);
         m_image.fill(QColor(0x10, 0x14, 0x18));
     }
 
-    // Ảnh mẫu là 1200x1200 nhưng màn hình đích chỉ cao 1024, nên thu nhỏ cho vừa
-    // màn hình mà vẫn giữ tỉ lệ; ảnh nhỏ hơn màn hình thì để nguyên cỡ thật.
+    // Ảnh gốc 1200x1200 quá lớn so với màn hình 1280x1024, nên hiển thị ở một
+    // nửa kích thước (600x600) theo yêu cầu.
+    m_image = m_image.scaled(m_image.size() / 2, Qt::KeepAspectRatio,
+                             Qt::SmoothTransformation);
+
+    // Chốt chặn cho màn hình nhỏ bất thường: vẫn phải nằm gọn trong màn hình.
     if (QScreen *scr = QGuiApplication::primaryScreen()) {
         const QSize avail = scr->availableGeometry().size() * 0.92;
         if (m_image.width() > avail.width() || m_image.height() > avail.height())
