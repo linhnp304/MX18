@@ -1,0 +1,26 @@
+# Thư mục build
+build/
+build-*/
+out/
+cmake-build-*/
+
+# Sản phẩm biên dịch
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+*.ilk
+
+# Qt Creator / IDE
+CMakeLists.txt.user*
+.qtc_clangd/
+.vscode/
+.idea/
+*.autosave
+
+# Hệ điều hành
+.DS_Store
+Thumbs.db

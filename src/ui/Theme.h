@@ -1,0 +1,24 @@
+#pragma once
+
+#include <QColor>
+#include <QString>
+
+// Tông màu tối kiểu bảng điều khiển kỹ thuật, dùng chung cho mọi cửa sổ.
+namespace Theme {
+
+const QColor kBackground(0x14, 0x17, 0x1a);
+const QColor kPanel(0x1b, 0x1f, 0x24);
+const QColor kPanelAlt(0x22, 0x27, 0x2d);
+const QColor kBorder(0x35, 0x3d, 0x46);
+const QColor kText(0xd3, 0xdb, 0xe3);
+const QColor kTextDim(0x8a, 0x95, 0xa1);
+const QColor kAccent(0x3f, 0xa9, 0xf5);
+const QColor kOk(0x3a, 0xd0, 0x62);
+const QColor kWarn(0xf0, 0xc0, 0x30);
+const QColor kError(0xf0, 0x40, 0x40);
+const QColor kIdle(0xb6, 0xbe, 0xc6);
+
+QString styleSheet();
+void apply();
+
+} // namespace Theme

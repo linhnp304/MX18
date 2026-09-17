@@ -1,0 +1,74 @@
+name: Build MX18
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ubuntu:
+    name: Ubuntu 24.04
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ubuntu 24.04 có sẵn Qt 6.4 trong kho apt - đúng mức Qt tối thiểu của dự án.
+      - name: Cài thư viện
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build \
+            qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev
+
+      - name: Cấu hình
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Biên dịch
+        run: cmake --build build --parallel
+
+      - name: Gói sản phẩm
+        run: |
+          mkdir -p dist
+          cp build/MX18 dist/
+          cp README.md dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MX18-ubuntu-x86_64
+          path: dist/
+
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cài Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.4.3'
+          host: windows
+          target: desktop
+          arch: win64_msvc2019_64
+          modules: ''
+
+      - name: Cấu hình
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Biên dịch
+        run: cmake --build build --config Release --parallel
+
+      # Đóng gói đầy đủ thư viện Qt để chép sang máy trắc thủ là chạy được ngay.
+      - name: Gói sản phẩm kèm thư viện Qt
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item build/Release/MX18.exe dist/
+          Copy-Item README.md dist/
+          & "$env:QT_ROOT_DIR/bin/windeployqt.exe" --release --no-translations --no-opengl-sw dist/MX18.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MX18-windows-x64
+          path: dist/
