@@ -4,6 +4,7 @@
 
 #include <QDoubleValidator>
 #include <QHBoxLayout>
+#include <QGridLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
@@ -104,10 +105,12 @@ void NetworkPopup::setNodes(const QVector<NetNode> &nodes)
     for (int i = 0; i < nodes.size(); ++i) {
         m_table->setItem(i, 0, new QTableWidgetItem(nodes.at(i).name));
         m_table->setItem(i, 1, new QTableWidgetItem(nodes.at(i).address));
-        auto *st = new QTableWidgetItem();
-        st->setIcon(QIcon(statusDot(Theme::kError)));
-        st->setTextAlignment(Qt::AlignCenter);
-        m_table->setItem(i, 2, st);
+        // Đặt hình tròn bằng QLabel thay vì icon của item: icon trong bảng luôn
+        // bám lề trái, không căn giữa cột được.
+        auto *dot = new QLabel(m_table);
+        dot->setAlignment(Qt::AlignCenter);
+        dot->setPixmap(statusDot(Theme::kError));
+        m_table->setCellWidget(i, 2, dot);
     }
     m_table->resizeRowsToContents();
 }
@@ -116,8 +119,8 @@ void NetworkPopup::setNodeState(int index, bool alive)
 {
     if (index < 0 || index >= m_table->rowCount())
         return;
-    if (QTableWidgetItem *it = m_table->item(index, 2))
-        it->setIcon(QIcon(statusDot(alive ? Theme::kOk : Theme::kError)));
+    if (auto *dot = qobject_cast<QLabel *>(m_table->cellWidget(index, 2)))
+        dot->setPixmap(statusDot(alive ? Theme::kOk : Theme::kError));
 }
 
 // --------------------------------------------------------- Tọa độ tâm đài
@@ -132,19 +135,25 @@ RadarCenterPopup::RadarCenterPopup(QWidget *parent)
     auto *validator = new QDoubleValidator(-180.0, 180.0, 6, this);
     validator->setNotation(QDoubleValidator::StandardNotation);
 
-    auto addRow = [&](const QString &caption, QLineEdit **edit) {
-        auto *row = new QHBoxLayout;
+    // Lưới hai cột: nhãn và ô nhập mỗi bên một cột nên hai ô nhập luôn rộng
+    // bằng nhau dù nhãn dài ngắn khác nhau.
+    auto *grid = new QGridLayout;
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(6);
+    grid->setVerticalSpacing(6);
+    grid->setColumnStretch(1, 1);
+
+    auto addRow = [&](int row, const QString &caption, QLineEdit **edit) {
         auto *lbl = new QLabel(caption, body());
-        lbl->setMinimumWidth(70);
         *edit = new QLineEdit(body());
         (*edit)->setValidator(validator);
         (*edit)->setMinimumWidth(130);
-        row->addWidget(lbl);
-        row->addWidget(*edit, 1);
-        lay->addLayout(row);
+        grid->addWidget(lbl, row, 0);
+        grid->addWidget(*edit, row, 1);
     };
-    addRow(QStringLiteral("Vỹ độ (lat):"), &m_lat);
-    addRow(QStringLiteral("Kinh độ (lng):"), &m_lon);
+    addRow(0, QStringLiteral("Vỹ độ:"), &m_lat);
+    addRow(1, QStringLiteral("Kinh độ:"), &m_lon);
+    lay->addLayout(grid);
 
     auto *applyBtn = new QPushButton(QStringLiteral("Áp dụng"), body());
     auto *gpsBtn = new QPushButton(QStringLiteral("Đặt theo GPS"), body());
