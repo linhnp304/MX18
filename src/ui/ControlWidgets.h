@@ -14,7 +14,22 @@ class QSpinBox;
 // xếp lưới bên dưới; số cột do lớp gọi quyết định để hàng 12 lựa chọn (rcode1)
 // gấp thành 2 dòng theo đúng đặc tả.
 
-class RadioRow : public QWidget
+// Hàng điều khiển có nhãn ở cột đầu. Các hàng trong cùng một nhóm được căn về
+// một bề rộng nhãn để mọi lựa chọn bắt đầu thẳng một cột.
+class LabeledRow : public QWidget
+{
+    Q_OBJECT
+public:
+    using QWidget::QWidget;
+
+    QLabel *titleLabel() const { return m_title; }
+    static void alignTitles(const QVector<LabeledRow *> &rows);
+
+protected:
+    QLabel *m_title = nullptr;
+};
+
+class RadioRow : public LabeledRow
 {
     Q_OBJECT
 public:
@@ -32,7 +47,6 @@ signals:
     void valueChanged(quint32 value);
 
 private:
-    QLabel *m_title = nullptr;
     QVector<QRadioButton *> m_buttons;
     QVector<quint32> m_values;
     quint32 m_value = 0;
@@ -40,7 +54,7 @@ private:
 };
 
 // Nhãn + ô nhập số nguyên.
-class SpinRow : public QWidget
+class SpinRow : public LabeledRow
 {
     Q_OBJECT
 public:

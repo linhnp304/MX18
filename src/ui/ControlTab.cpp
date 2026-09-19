@@ -148,7 +148,7 @@ void ControlTab::buildAntenna(QWidget *parent)
 
     auto *onoff = new RadioRow(QStringLiteral("Quay ăng ten"),
                                {QStringLiteral("Dừng"), QStringLiteral("Quay")}, k01, 0, g);
-    auto *speed = new RadioRow(QStringLiteral("Vận tốc quay (v/p)"),
+    auto *speed = new RadioRow(QStringLiteral("VT quay (v/p)"),
                                numberLabels(1, 6), numberValues(1, 6), 6, g);
     auto *sync = new RadioRow(QStringLiteral("Chế độ quay"),
                               {QStringLiteral("Độc lập"), QStringLiteral("Đồng bộ")}, k01, 0, g);
@@ -160,6 +160,7 @@ void ControlTab::buildAntenna(QWidget *parent)
     lay->addWidget(onoff);
     lay->addWidget(speed);
     lay->addWidget(sync);
+    LabeledRow::alignTitles({onoff, speed, sync});
 }
 
 // ---------------------------------------------------------- Điều khiển MH
@@ -170,11 +171,11 @@ void ControlTab::buildMh(QWidget *parent)
     QVBoxLayout *lay = groupLayout(g);
 
     auto *nguonCs = new RadioRow(QStringLiteral("Nguồn 50V"), kOnOff, {0, 100}, 0, g);
-    m_nguonPvi = new RadioRow(QStringLiteral("Đường quét MH"),
+    m_nguonPvi = new RadioRow(QStringLiteral("Đường quét"),
                               {QStringLiteral("Giả quay"), QStringLiteral("Encoder")}, k01, 0, g);
-    m_vantocGiaquay = new RadioRow(QStringLiteral("Vận tốc giả quay"),
+    m_vantocGiaquay = new RadioRow(QStringLiteral("VT giả quay"),
                                    {QStringLiteral("6 v/p"), QStringLiteral("12 v/p")}, k01, 0, g);
-    auto *cdLamviec = new RadioRow(QStringLiteral("Chế độ làm việc"),
+    auto *cdLamviec = new RadioRow(QStringLiteral("CĐ làm việc"),
                                    {QStringLiteral("Tạo giả"), QStringLiteral("Làm việc"),
                                     QStringLiteral("TLKT")}, {0, 1, 2}, 0, g);
     auto *giaBd = new RadioRow(QStringLiteral("Giả báo động"), kOnOff, k01, 0, g);
@@ -196,6 +197,7 @@ void ControlTab::buildMh(QWidget *parent)
     lay->addWidget(cdLamviec);
     lay->addWidget(giaBd);
     lay->addWidget(giaBn);
+    LabeledRow::alignTitles({nguonCs, m_nguonPvi, m_vantocGiaquay, cdLamviec, giaBd, giaBn});
 }
 
 void ControlTab::updateGiaquayEnabled()
@@ -260,6 +262,7 @@ void ControlTab::buildCodes(QWidget *parent)
     lay->addWidget(rcode3);
     lay->addWidget(m_keyM2);
     lay->addWidget(m_clearKeyBtn);
+    LabeledRow::alignTitles({m_icode1, m_mode, rcode1, icode3, rcode3, m_keyM2});
 }
 
 void ControlTab::updateModeOptions()
@@ -323,6 +326,7 @@ void ControlTab::buildTransmit(QWidget *parent)
     lay->addWidget(cdPhat);
     lay->addWidget(m_fan1);
     lay->addWidget(m_fan2);
+    LabeledRow::alignTitles({noiphat, kenhphu, csPhat, cdPhat});
 }
 
 // ----------------------------------------------------- Hệ thống phát hiện
@@ -352,9 +356,10 @@ void ControlTab::buildDetect(QWidget *parent)
     bind(th1, &m_user[CmdUser::NguongXungdon], false);
     bind(th2, &m_user[CmdUser::NguongXungdon2], false);
 
-    for (QWidget *w : std::initializer_list<QWidget *>{stc, cnKdb, cnAk, mono,
-                                                       mono1, mono2, hsAk, th1, th2})
-        lay->addWidget(w);
+    const QVector<LabeledRow *> rows = {stc, cnKdb, cnAk, mono, mono1, mono2, hsAk, th1, th2};
+    for (LabeledRow *row : rows)
+        lay->addWidget(row);
+    LabeledRow::alignTitles(rows);
 }
 
 // -------------------------------------------------- Điều khiển dịch vụ VQ
@@ -366,16 +371,20 @@ void ControlTab::buildService(QWidget *parent)
 
     // Ba lựa chọn này chỉ đổi cách phần mềm xử lý dữ liệu, không nằm trong gói
     // lệnh nào; phần việc thật nối vào ở giai đoạn sau.
-    auto *fromRd = new RadioRow(QStringLiteral("Nhận dữ liệu từ RD"), kOnOff, k01, 0, g);
-    auto *toSch = new RadioRow(QStringLiteral("Gửi dữ liệu đến SCH"), kOnOff, k01, 0, g);
-    auto *fromPlot = new RadioRow(QStringLiteral("Quỹ đạo từ điểm dấu MH"), kOnOff, k01, 0, g);
+    auto *fromRd = new RadioRow(QStringLiteral("Nhận từ RD"), kOnOff, k01, 0, g);
+    auto *toSch = new RadioRow(QStringLiteral("Gửi đến SCH"), kOnOff, k01, 0, g);
+    auto *fromPlot = new RadioRow(QStringLiteral("Tạo quỹ đạo MH"), kOnOff, k01, 0, g);
+    auto *sendPlot = new RadioRow(QStringLiteral("Gửi điểm dấu MH"), kOnOff, k01, 0, g);
     fromRd->setValue(1);
     toSch->setValue(1);
     fromPlot->setValue(0);
+    sendPlot->setValue(1);
 
     lay->addWidget(fromRd);
     lay->addWidget(toSch);
     lay->addWidget(fromPlot);
+    lay->addWidget(sendPlot);
+    LabeledRow::alignTitles({fromRd, toSch, fromPlot, sendPlot});
 }
 
 // ------------------------------------------------------------ khoá / mở khoá

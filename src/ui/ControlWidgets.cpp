@@ -38,11 +38,26 @@ QSpinBox *makeSpin(int lo, int hi, QWidget *parent)
 
 } // namespace
 
+// ------------------------------------------------------------- LabeledRow
+
+void LabeledRow::alignTitles(const QVector<LabeledRow *> &rows)
+{
+    int width = 0;
+    for (LabeledRow *r : rows) {
+        if (r && r->m_title)
+            width = qMax(width, r->m_title->sizeHint().width());
+    }
+    for (LabeledRow *r : rows) {
+        if (r && r->m_title)
+            r->m_title->setMinimumWidth(width);
+    }
+}
+
 // -------------------------------------------------------------- RadioRow
 
 RadioRow::RadioRow(const QString &title, const QStringList &labels, const QVector<quint32> &values,
                    int columns, QWidget *parent)
-    : QWidget(parent)
+    : LabeledRow(parent)
     , m_values(values)
 {
     // Nhãn và các lựa chọn nằm chung một hàng: cột 0 là nhãn, các cột sau là
@@ -107,15 +122,20 @@ void RadioRow::setOption(int index, const QString &label, quint32 value)
 // --------------------------------------------------------------- SpinRow
 
 SpinRow::SpinRow(const QString &title, int lo, int hi, QWidget *parent)
-    : QWidget(parent)
+    : LabeledRow(parent)
 {
     auto *lay = new QHBoxLayout(this);
     lay->setContentsMargins(0, 1, 0, 1);
-    lay->setSpacing(6);
+    lay->setSpacing(4);
 
-    lay->addWidget(captionLabel(title, this), 1);
+    m_title = captionLabel(title, this);
+    lay->addWidget(m_title);
     m_spin = makeSpin(lo, hi, this);
+    // Ô nhập bắt đầu ngay sau nhãn giống các lựa chọn của RadioRow, chỗ thừa
+    // dồn về bên phải chứ không kéo giãn ô nhập ra hết hàng.
+    m_spin->setFixedWidth(96);
     lay->addWidget(m_spin);
+    lay->addStretch(1);
 
     connect(m_spin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v) {
         if (!m_loading)
