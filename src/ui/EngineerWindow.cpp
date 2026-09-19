@@ -126,13 +126,33 @@ EngineerWindow::EngineerWindow(QWidget *parent)
     for (QWidget *w : std::as_const(m_lockedTabs))
         w->setEnabled(!m_lockBox->isChecked());
 
-    // Các điều khiển xếp dọc, chiều ngang vừa đúng bảng 8 cột chứ không rộng
-    // hơn: hẹp hơn nữa thì kỹ sư phải cuộn ngang mới thấy RemoteIP/RemotePort.
+    // Kích thước tự nhiên: các điều khiển xếp dọc, chiều ngang vừa đúng bảng 8
+    // cột chứ không rộng hơn — hẹp hơn là kỹ sư phải cuộn ngang mới thấy
+    // RemoteIP/RemotePort. Chiều cao do fitTable() ở trên quyết định.
     int tableWidth = 2 * m_links->frameWidth()
                      + m_links->verticalScrollBar()->sizeHint().width();
     for (int c = 0; c < m_links->columnCount(); ++c)
         tableWidth += m_links->columnWidth(c);
-    setMinimumWidth(qBound(560, tableWidth + 44, 1100));
+
+    layout()->activate();
+    const QSize natural(qBound(560, tableWidth + 44, 1100), sizeHint().height());
+    resize(natural);
+
+    // Lấy xong kích thước tự nhiên thì hạ sàn của hai bảng xuống còn 3 dòng và
+    // đặt sàn của cửa sổ đúng một nửa: anh Linh muốn kéo thu nhỏ được tối đa
+    // 50% cả hai chiều, lúc đó hai bảng tự hiện thanh cuộn.
+    relaxTable(m_links);
+    relaxTable(m_nodes);
+    setMinimumSize(natural.width() / 2, natural.height() / 2);
+}
+
+// Sàn chiều cao sau khi đã lấy xong kích thước tự nhiên: chỉ còn một dòng, đủ
+// để cửa sổ co lại bằng nửa mà các nút bên dưới bảng không bị bảng đè lên.
+void EngineerWindow::relaxTable(QTableWidget *table)
+{
+    const int rowHeight = table->verticalHeader()->defaultSectionSize();
+    const int headerHeight = table->horizontalHeader()->sizeHint().height();
+    table->setMinimumHeight(headerHeight + rowHeight + 2 * table->frameWidth());
 }
 
 // Ép dòng cao cố định rồi tính ngược chiều cao bảng: lúc dựng giao diện bảng
@@ -193,7 +213,9 @@ QWidget *EngineerWindow::buildConnectTab()
     linkBtns->addStretch(1);
     linkBtns->addWidget(saveLinkBtn);
     linkLay->addLayout(linkBtns);
-    lay->addWidget(linkBox, 1);
+    // Hệ số giãn = số dòng muốn thấy trừ đi sàn một dòng của relaxTable(), nhờ
+    // vậy ở kích thước tự nhiên phần dư chia ra đúng 9 dòng và 8 dòng.
+    lay->addWidget(linkBox, 8);
 
     // --- Group: danh sách các nút mạng
     auto *nodeBox = new QGroupBox(QStringLiteral("Danh sách các nút mạng"), page);
@@ -219,7 +241,7 @@ QWidget *EngineerWindow::buildConnectTab()
     nodeBtns->addStretch(1);
     nodeBtns->addWidget(saveNodeBtn);
     nodeLay->addLayout(nodeBtns);
-    lay->addWidget(nodeBox, 1);
+    lay->addWidget(nodeBox, 7);
 
     fillLinkTable();
     fillNodeTable();

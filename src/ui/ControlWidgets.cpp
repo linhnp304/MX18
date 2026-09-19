@@ -45,28 +45,27 @@ RadioRow::RadioRow(const QString &title, const QStringList &labels, const QVecto
     : QWidget(parent)
     , m_values(values)
 {
-    auto *lay = new QVBoxLayout(this);
-    lay->setContentsMargins(0, 1, 0, 1);
-    lay->setSpacing(1);
+    // Nhãn và các lựa chọn nằm chung một hàng: cột 0 là nhãn, các cột sau là
+    // lựa chọn. Hàng nào nhiều lựa chọn quá (mã trả lời M1 có 12) thì phần dư
+    // xuống dòng dưới, nhãn vẫn ở dòng đầu.
+    auto *grid = new QGridLayout(this);
+    grid->setContentsMargins(0, 1, 0, 1);
+    grid->setHorizontalSpacing(4);
+    grid->setVerticalSpacing(1);
 
     m_title = captionLabel(title, this);
-    lay->addWidget(m_title);
-
-    auto *grid = new QGridLayout;
-    grid->setContentsMargins(10, 0, 0, 0);
-    grid->setHorizontalSpacing(6);
-    grid->setVerticalSpacing(1);
+    m_title->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    grid->addWidget(m_title, 0, 0);
 
     auto *group = new QButtonGroup(this);
     const int cols = qMax(1, columns > 0 ? columns : labels.size());
     for (int i = 0; i < labels.size(); ++i) {
         auto *rb = new QRadioButton(labels.at(i), this);
         group->addButton(rb, i);
-        grid->addWidget(rb, i / cols, i % cols);
+        grid->addWidget(rb, i / cols, i % cols + 1);
         m_buttons.append(rb);
     }
-    grid->setColumnStretch(cols, 1);
-    lay->addLayout(grid);
+    grid->setColumnStretch(cols + 1, 1);
 
     if (!m_values.isEmpty())
         m_value = m_values.first();

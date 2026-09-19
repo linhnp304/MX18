@@ -39,6 +39,7 @@ private:
 
     void setNodeRow(int row, const NetNode &node);
     void fitTable(QTableWidget *table, int visibleRows);
+    void relaxTable(QTableWidget *table);
     QWidget *makeIpEdit(const QString &value);
     QWidget *makePortSpin(quint16 value);
 

@@ -293,7 +293,7 @@ void ControlTab::buildTransmit(QWidget *parent)
     auto *cdPhat = new RadioRow(QStringLiteral("Chế độ phát"),
                                 {QStringLiteral("Liên tục"), QStringLiteral("Rẻ quạt"),
                                  QStringLiteral("Ngắt 1v"), QStringLiteral("Ngắt 2v")},
-                                {0, 1, 2, 3}, 2, g);
+                                {0, 1, 2, 3}, 4, g);
 
     bind(noiphat, &m_user[CmdUser::Noiphat], false);
     bind(kenhphu, &m_user[CmdUser::Kenhphu], false);
