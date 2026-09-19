@@ -8,7 +8,7 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
 
 ## Trạng thái
 
-Giai đoạn 1 — dựng layout 3 panel và nền bản đồ số:
+**Giai đoạn 1** — layout 3 panel và nền bản đồ số:
 
 - Màn hình giới thiệu 2 giây rồi mở cửa sổ chính ở chế độ toàn màn hình.
 - Panel 1: nền bản đồ số (9 lớp shapefile + sân bay + địa danh), vòng cự ly,
@@ -17,6 +17,21 @@ Giai đoạn 1 — dựng layout 3 panel và nền bản đồ số:
 - Panel 2: các tab **Danh sách / Điều khiển / Ghi lưu / Cài đặt** và cửa sổ biên độ.
 - Panel 3: thanh trạng thái với các cửa sổ popup trạng thái, đồng hồ hệ thống,
   toạ độ con trỏ, góc đường quét, nút ẩn/hiện panel 2 và nút toạ độ tâm đài.
+
+**Giai đoạn 2** — kết nối dữ liệu, điều khiển và hiển thị video:
+
+- Quản lý kết nối theo `settings/connect.json`: mỗi cổng gửi/nhận một luồng
+  riêng, UDP (unicast/broadcast) và TCP (server/client).
+- Tab "Điều khiển": đầy đủ các nhóm lệnh **CMD_AT** (ăng ten) và **CMD_USER**
+  (MH, mã hỏi đáp, phát, hệ thống phát hiện). Mỗi lần đổi một điều khiển thì cả
+  gói lệnh được đóng lại và gửi đi một lần.
+- Cửa sổ **"Điều khiển và thiết lập mức kỹ sư"**: cửa sổ nổi, không chặn giao
+  diện chính; tab "Connect" sửa được bảng cổng gửi/nhận và danh sách nút mạng.
+- Cửa sổ **"Trạng thái MH"** đổ dữ liệu gói **STATUS_MH**, giá trị vượt ngưỡng
+  trong `settings/statuserror.json` đổi sang màu đỏ.
+- Đường quét **RD** (xanh biển) và **MH** (xanh lá) vẽ trên nền bản đồ, 600 điểm
+  biên độ của gói **VIDEO_I** vẽ đồng bộ theo đường quét MH và mờ dần theo thanh
+  trượt "Tốc độ mờ video"; cùng dữ liệu đó hiện trên cửa sổ biên độ (panel 2.2).
 
 ## Yêu cầu biên dịch
 
@@ -77,7 +92,8 @@ cần cài thêm gì.
 MX18(.exe)
 ├── maps/mc/        dữ liệu bản đồ số (shapefile, Diadanh.txt, Airport2.dat)
 ├── resources/      FlashScreen.jpg, logo.png
-├── settings/       swinfo.json, setups.json, checkip.json, params.json
+├── settings/       swinfo.json, setups.json, checkip.json, connect.json,
+│                   setupadmin.json, statuserror.json, params.json
 ├── logs/           log và thông báo hệ thống
 └── records/        file ghi lưu
 ```
@@ -92,7 +108,16 @@ MX18(.exe)
 | `swinfo.json` | `info_line0` (chữ trên màn hình giới thiệu), `info_line1`/`info_line2` (ô thông tin phần mềm góc trên bên trái panel 1) |
 | `setups.json` | Toàn bộ lựa chọn trong tab "Cài đặt", bảng màu và toạ độ tâm đài |
 | `checkip.json` | Danh sách nút mạng cần ping: `name`, `address`, `kind` (0 không cảnh báo, 1 cảnh báo, 2 báo lỗi) |
-| `params.json` | Tham số mức kỹ sư, kể cả mật khẩu (mặc định `X18`) |
+| `connect.json` | Bảng cổng gửi/nhận cho từng loại dữ liệu, và `big_endian` (thứ tự byte của gói tin) |
+| `setupadmin.json` | Thiết lập cửa sổ mức kỹ sư, kể cả mật khẩu (mặc định `X18`) |
+| `statuserror.json` | Ngưỡng báo lỗi của cửa sổ "Trạng thái MH": `Min50V`, `Max50V`, `Min5V`, `Max5V`, `MinCs`, `MaxT`, `MaxH` |
+| `params.json` | Tham số đài (tab "Params" của cửa sổ kỹ sư, giai đoạn sau) |
+
+Thiếu file nào thì phần mềm tự tạo file đó với giá trị mặc định. File **đã có mà
+đọc lỗi** (sai cú pháp json, hỏng file) thì phần mềm vẫn chạy bằng giá trị mặc
+định và đẩy một dòng `[Lỗi]` vào cửa sổ "Thông báo hệ thống" để trắc thủ gọi kỹ
+sư sửa — `connect.json` và `checkip.json` **chỉ đọc lúc khởi động**, sửa xong
+phải chạy lại phần mềm.
 
 ## Ghi chú kỹ thuật
 
@@ -106,3 +131,12 @@ MX18(.exe)
   vào một pixmap đệm, chỉ dựng lại khi khung nhìn hoặc tuỳ chọn thay đổi.
 - **Biểu tượng**: mọi ký hiệu (sân bay, nút trạng thái) vẽ bằng `QPainterPath`
   để đổi màu theo trạng thái và không phụ thuộc file ảnh.
+- **Gói tin**: khung cố định 24 byte (`header`, `category`, `length`, `serial`,
+  `time`, `checksum`) bọc quanh `data_fields[]`, mỗi trường 4 byte. Thứ tự byte
+  mặc định **big-endian**, đổi được bằng khoá `big_endian` trong `connect.json`.
+  `checksum` hiện gán 0 và chưa kiểm tra.
+- **Video**: đường quét MH đến khoảng 400 gói/giây. Mỗi tia được vẽ bằng một
+  phép biến đổi quay + giãn của một ảnh 600×1 điểm — rẻ hơn nhiều so với 600 đoạn
+  thẳng cho mỗi tia — vào một lớp ARGB riêng; lớp này mờ dần bằng phép **trừ**
+  alpha (không phải nhân, vì phép nhân số nguyên đứng lại ở mức alpha thấp và để
+  lại vệt xanh không bao giờ tắt) và được ghép lên nền bản đồ ở nhịp 25 hình/giây.

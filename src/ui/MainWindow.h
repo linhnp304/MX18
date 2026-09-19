@@ -1,6 +1,7 @@
 #pragma once
 
 #include "map/MapData.h"
+#include "net/LinkConfig.h"
 #include "ui/StatusPanel.h"
 
 #include <QMainWindow>
@@ -8,13 +9,17 @@
 
 class ColorSetupDialog;
 class ControlPanel;
+class EngineerWindow;
+class LinkManager;
 class MapView;
+class MhStatusPopup;
 class NetworkPopup;
 class NotifyPopup;
 class PingService;
 class RadarCenterPopup;
 class SlidePopup;
 class QSplitter;
+class QTimer;
 class QVariantAnimation;
 
 class MainWindow : public QMainWindow
@@ -38,6 +43,13 @@ private:
     void buildUi();
     void wireSignals();
     void startPing();
+    void reportConfigErrors();
+
+    // Phân loại gói tin nhận được về đúng nơi hiển thị.
+    void onFrame(quint32 category, quint32 serial, const QByteArray &data);
+    void sendCmdAt();
+    void sendCmdUser();
+    void openEngineerWindow();
 
     void togglePopup(int id);
     void openPopup(int id);
@@ -57,12 +69,24 @@ private:
 
     NotifyPopup *m_notifyPopup = nullptr;
     NetworkPopup *m_networkPopup = nullptr;
+    MhStatusPopup *m_mhPopup = nullptr;
     RadarCenterPopup *m_radarPopup = nullptr;
     QVector<SlidePopup *> m_popups;
 
     ColorSetupDialog *m_colorDialog = nullptr;
+    EngineerWindow *m_engineerWindow = nullptr;
 
     PingService *m_ping = nullptr;
+
+    LinkConfig m_linkConfig;
+    QString m_linkConfigError;
+    LinkManager *m_links = nullptr;
+
+    // Góc quét đến 400 lần/giây cho mỗi loại; thanh trạng thái chỉ cần 10 lần.
+    QTimer *m_angleTimer = nullptr;
+    double m_azRd = 0.0;
+    double m_azMh = 0.0;
+    bool m_hasAngles = false;
 
     QVariantAnimation *m_panelAnim = nullptr;
     int m_savedPanelWidth = 320;

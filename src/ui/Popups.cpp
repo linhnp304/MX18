@@ -95,8 +95,22 @@ NetworkPopup::NetworkPopup(QWidget *parent)
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    m_table->setMinimumSize(340, 170);
+    m_table->setMinimumWidth(340);
     lay->addWidget(m_table);
+}
+
+// Chiều cao đủ đúng 10 dòng; từ dòng thứ 11 mới hiện thanh cuộn dọc.
+void NetworkPopup::fitRows(int visibleRows)
+{
+    // Ép mọi dòng cùng một chiều cao rồi tính ngược ra chiều cao bảng. Nếu để
+    // Qt tự co dòng thì lúc dựng giao diện (bảng chưa hiện) chiều cao dòng chưa
+    // có giá trị thật, và bảng lệch đi vài dòng.
+    const int rowHeight = qMax(24, fontMetrics().height() + 8);
+    m_table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+    m_table->verticalHeader()->setDefaultSectionSize(rowHeight);
+
+    const int headerHeight = m_table->horizontalHeader()->sizeHint().height();
+    m_table->setFixedHeight(headerHeight + rowHeight * visibleRows + 2 * m_table->frameWidth());
 }
 
 void NetworkPopup::setNodes(const QVector<NetNode> &nodes)
@@ -112,7 +126,7 @@ void NetworkPopup::setNodes(const QVector<NetNode> &nodes)
         dot->setPixmap(statusDot(Theme::kError));
         m_table->setCellWidget(i, 2, dot);
     }
-    m_table->resizeRowsToContents();
+    fitRows(10);
 }
 
 void NetworkPopup::setNodeState(int index, bool alive)

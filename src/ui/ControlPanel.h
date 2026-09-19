@@ -8,7 +8,7 @@ class SettingsTab;
 class QSplitter;
 class QTabWidget;
 
-// Panel 2: các tab điều khiển (75% chiều dọc) và cửa sổ biên độ (25%).
+// Panel 2: các tab điều khiển (80% chiều dọc) và cửa sổ biên độ (20%).
 class ControlPanel : public QWidget
 {
     Q_OBJECT

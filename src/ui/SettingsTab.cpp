@@ -8,6 +8,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QScrollArea>
@@ -110,7 +111,7 @@ void SettingsTab::buildUi()
     m_trailDot = trail[0];
     m_trailLine = trail[1];
 
-    m_showTrackProfile = new QCheckBox(QStringLiteral("Hiện lí lịch quỹ đạo"), page);
+    m_showTrackProfile = new QCheckBox(QStringLiteral("Hiện lý lịch quỹ đạo"), page);
     m_showPlotInfo = new QCheckBox(QStringLiteral("Hiện thông tin điểm dấu MH"), page);
     lay->addWidget(m_showTrackProfile);
     lay->addWidget(m_showPlotInfo);
@@ -128,7 +129,7 @@ void SettingsTab::buildUi()
     lay->addWidget(m_colorSetupBtn);
 
     lay->addSpacing(6);
-    m_connectBtn = new QPushButton(QStringLiteral("Kết nối"), page);
+    m_connectBtn = new QPushButton(QStringLiteral("Kết nối hệ thống"), page);
     m_connectBtn->setMinimumHeight(28);
     m_exitBtn = new QPushButton(QStringLiteral("Thoát phần mềm"), page);
     lay->addWidget(m_connectBtn);
@@ -167,7 +168,15 @@ void SettingsTab::buildUi()
     connect(m_colorSetupBtn, &QPushButton::clicked, this, &SettingsTab::colorSetupRequested);
     connect(m_connectBtn, &QPushButton::clicked, this,
             [this] { emit connectToggled(!m_connected); });
-    connect(m_exitBtn, &QPushButton::clicked, this, &SettingsTab::exitRequested);
+    connect(m_exitBtn, &QPushButton::clicked, this, [this] {
+        const auto answer = QMessageBox::question(this, QStringLiteral("Thoát phần mềm"),
+                                                  QStringLiteral("Anh có chắc chắn muốn thoát "
+                                                                 "phần mềm MX18?"),
+                                                  QMessageBox::Yes | QMessageBox::No,
+                                                  QMessageBox::No);
+        if (answer == QMessageBox::Yes)
+            emit exitRequested();
+    });
 }
 
 void SettingsTab::loadFromSettings()
@@ -218,8 +227,8 @@ void SettingsTab::pushToSettings()
 void SettingsTab::setConnected(bool connected)
 {
     m_connected = connected;
-    m_connectBtn->setText(connected ? QStringLiteral("Dừng kết nối")
-                                    : QStringLiteral("Kết nối"));
+    m_connectBtn->setText(connected ? QStringLiteral("Dừng kết nối hệ thống")
+                                    : QStringLiteral("Kết nối hệ thống"));
     m_connectBtn->setStyleSheet(connected
         ? QStringLiteral("color:#ffd24d;font-weight:bold;")
         : QStringLiteral("color:#7ee08a;font-weight:bold;"));

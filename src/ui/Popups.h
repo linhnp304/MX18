@@ -38,6 +38,8 @@ public:
     void setNodeState(int index, bool alive);
 
 private:
+    void fitRows(int visibleRows);
+
     QTableWidget *m_table = nullptr;
 };
 

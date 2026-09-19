@@ -3,12 +3,17 @@
 #include "core/GeoCalc.h"
 #include "map/MapPalette.h"
 
+#include <QByteArray>
+#include <QElapsedTimer>
+#include <QImage>
 #include <QPixmap>
 #include <QPointF>
+#include <QVector>
 #include <QWidget>
 
 class MapData;
 class QSlider;
+class QTimer;
 class QToolButton;
 
 // Panel 1: nền bản đồ số và mọi đối tượng đồ hoạ vẽ trên đó.
@@ -34,6 +39,13 @@ public:
     // Gọi khi tuỳ chọn trong tab "Cài đặt" hoặc bảng màu thay đổi.
     void refreshSettings();
 
+    // Đường quét RD (gói VIDEO_R) và đường quét MH kèm 600 điểm biên độ
+    // (gói VIDEO_I). Cả hai đến khoảng 400 lần/giây nên chỉ ghi lại dữ liệu;
+    // việc vẽ do bộ đếm thời gian 25 hình/giây bên trong lo.
+    void setRadarSweep(double azimuthDeg);
+    void setMhSweep(double azimuthDeg, const QByteArray &video);
+    void clearVideo();
+
 signals:
     // valid = false khi con trỏ rời khỏi panel.
     void cursorGeoChanged(bool valid, double lat, double lon, double bearing, double range);
@@ -57,6 +69,10 @@ private:
     void drawGrid(QPainter &p, const QRectF &viewPlane);
     void drawPoints(QPainter &p, const QRectF &viewPlane);
     void drawInfoBox(QPainter &p);
+    void drawSweepLines(QPainter &p);
+    void ensureVideoLayer();
+    void fadeVideoLayer(double seconds);
+    void flushVideo();
     void layoutZoomBar();
     void syncZoomSlider();
     void onZoomSlider(int value);
@@ -70,6 +86,21 @@ private:
 
     QPixmap m_cache;
     bool m_cacheDirty = true;
+
+    // Biên độ tích luỹ vào một lớp ARGB riêng rồi mờ dần theo thời gian, nhờ vậy
+    // vệt quét cũ còn lại trên màn hình mà không phải vẽ lại hàng nghìn tia mỗi
+    // khung hình.
+    struct Spoke { double az; QByteArray video; };
+    QVector<Spoke> m_pendingSpokes;
+    QImage m_videoLayer;
+    QTimer *m_videoTimer = nullptr;
+    QElapsedTimer m_fadeClock;
+    double m_fadeCarry = 0.0;      // phần lẻ của mức alpha phải trừ, dồn sang lần sau
+
+    double m_sweepRd = 0.0;
+    double m_sweepMh = 0.0;
+    bool m_hasSweepRd = false;
+    bool m_hasSweepMh = false;
 
     // Khung nhìn còn bám theo kích thước panel cho tới khi trắc thủ tự zoom/kéo.
     bool m_fitPending = true;

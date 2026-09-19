@@ -39,7 +39,9 @@ QTabBar::tab {
     background: #21262c;
     border: 1px solid #353d46;
     border-bottom: none;
-    padding: 5px 12px;
+    /* Lề ngang vừa đủ để bốn tab của panel 2 nằm lọt trong bề ngang panel;
+       rộng hơn là Qt cuộn thanh tab và tab "Danh sách" bị cắt mất chữ. */
+    padding: 5px 8px;
     color: #9aa5b1;
 }
 QTabBar::tab:selected {

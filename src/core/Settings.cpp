@@ -29,10 +29,28 @@ Settings &Settings::instance()
 
 void Settings::load()
 {
+    m_loadErrors.clear();
     loadSwInfo();
     loadSetups();
     loadNetNodes();
-    loadParams();
+    loadSetupAdmin();
+    loadStatusLimits();
+}
+
+QStringList Settings::takeLoadErrors()
+{
+    QStringList errors;
+    errors.swap(m_loadErrors);
+    return errors;
+}
+
+QJsonObject Settings::readChecked(const QString &path)
+{
+    QString error;
+    const QJsonObject o = JsonFile::read(path, &error);
+    if (!error.isEmpty())
+        m_loadErrors.append(error);
+    return o;
 }
 
 // ---------------------------------------------------------------- swinfo.json
@@ -40,7 +58,7 @@ void Settings::load()
 void Settings::loadSwInfo()
 {
     const QString path = AppPaths::settingsFile(QStringLiteral("swinfo.json"));
-    const QJsonObject o = JsonFile::read(path);
+    const QJsonObject o = readChecked(path);
     const SwInfo def;
     m_swInfo.line0 = JsonFile::str(o, QStringLiteral("info_line0"), def.line0);
     m_swInfo.line1 = JsonFile::str(o, QStringLiteral("info_line1"), def.line1);
@@ -63,7 +81,7 @@ void Settings::saveSwInfo()
 void Settings::loadSetups()
 {
     const QString path = AppPaths::settingsFile(QStringLiteral("setups.json"));
-    const QJsonObject o = JsonFile::read(path);
+    const QJsonObject o = readChecked(path);
     const Setups d;
 
     m_setups.showMap          = JsonFile::b(o, QStringLiteral("show_map"), d.showMap);
@@ -128,7 +146,7 @@ void Settings::saveSetups()
 void Settings::loadNetNodes()
 {
     const QString path = AppPaths::settingsFile(QStringLiteral("checkip.json"));
-    const QJsonObject o = JsonFile::read(path);
+    const QJsonObject o = readChecked(path);
     const QJsonArray arr = o.value(QStringLiteral("nodes")).toArray();
 
     m_netNodes.clear();
@@ -148,41 +166,87 @@ void Settings::loadNetNodes()
             {QStringLiteral("Host 2"), QStringLiteral("127.0.0.1"), 1},
             {QStringLiteral("Host 3"), QStringLiteral("127.0.0.1"), 2},
         };
-        QJsonArray def;
-        for (const NetNode &n : std::as_const(m_netNodes)) {
-            QJsonObject jo;
-            jo[QStringLiteral("name")] = n.name;
-            jo[QStringLiteral("address")] = n.address;
-            jo[QStringLiteral("kind")] = n.kind;
-            def.append(jo);
-        }
-        QJsonObject root;
-        root[QStringLiteral("nodes")] = def;
-        JsonFile::write(path, root);
+        saveNetNodes();
     }
 }
 
-// ---------------------------------------------------------------- params.json
-
-void Settings::loadParams()
+void Settings::setNetNodes(const QVector<NetNode> &nodes)
 {
-    const QString path = AppPaths::settingsFile(QStringLiteral("params.json"));
-    const QJsonObject o = JsonFile::read(path);
+    m_netNodes = nodes;
+    saveNetNodes();
+}
+
+void Settings::saveNetNodes()
+{
+    QJsonArray arr;
+    for (const NetNode &n : std::as_const(m_netNodes)) {
+        QJsonObject jo;
+        jo[QStringLiteral("name")] = n.name;
+        jo[QStringLiteral("address")] = n.address;
+        jo[QStringLiteral("kind")] = n.kind;
+        arr.append(jo);
+    }
+    QJsonObject root;
+    root[QStringLiteral("nodes")] = arr;
+    JsonFile::write(AppPaths::settingsFile(QStringLiteral("checkip.json")), root);
+}
+
+// ----------------------------------------------------------- setupadmin.json
+
+void Settings::loadSetupAdmin()
+{
+    const QString path = AppPaths::settingsFile(QStringLiteral("setupadmin.json"));
+    const QJsonObject o = readChecked(path);
     m_engineerPassword = JsonFile::str(o, QStringLiteral("engineer_password"),
                                        QStringLiteral("X18"));
+    m_adminLocked = JsonFile::b(o, QStringLiteral("admin_locked"), true);
     if (!QFile::exists(path))
-        saveParams();
+        saveSetupAdmin();
 }
 
-void Settings::saveParams()
+void Settings::saveSetupAdmin()
 {
-    QJsonObject o = JsonFile::read(AppPaths::settingsFile(QStringLiteral("params.json")));
+    // Đọc lại file trước khi ghi: các tab Admin/AD/SW/Other/Params của cửa sổ
+    // kỹ sư sẽ thêm khoá riêng ở giai đoạn sau, đừng xoá mất của nhau.
+    QJsonObject o = JsonFile::read(AppPaths::settingsFile(QStringLiteral("setupadmin.json")));
     o[QStringLiteral("engineer_password")] = m_engineerPassword;
-    JsonFile::write(AppPaths::settingsFile(QStringLiteral("params.json")), o);
+    o[QStringLiteral("admin_locked")] = m_adminLocked;
+    JsonFile::write(AppPaths::settingsFile(QStringLiteral("setupadmin.json")), o);
 }
 
-void Settings::setEngineerPassword(const QString &pw)
+void Settings::setAdminLocked(bool locked)
 {
-    m_engineerPassword = pw;
-    saveParams();
+    if (m_adminLocked == locked)
+        return;
+    m_adminLocked = locked;
+    saveSetupAdmin();
+}
+
+// ---------------------------------------------------------- statuserror.json
+
+void Settings::loadStatusLimits()
+{
+    const QString path = AppPaths::settingsFile(QStringLiteral("statuserror.json"));
+    const QJsonObject o = readChecked(path);
+    const StatusLimits d;
+
+    m_limits.min50V = JsonFile::num(o, QStringLiteral("Min50V"), d.min50V);
+    m_limits.max50V = JsonFile::num(o, QStringLiteral("Max50V"), d.max50V);
+    m_limits.min5V  = JsonFile::num(o, QStringLiteral("Min5V"), d.min5V);
+    m_limits.max5V  = JsonFile::num(o, QStringLiteral("Max5V"), d.max5V);
+    m_limits.minCs  = JsonFile::i(o, QStringLiteral("MinCs"), d.minCs);
+    m_limits.maxT   = JsonFile::i(o, QStringLiteral("MaxT"), d.maxT);
+    m_limits.maxH   = JsonFile::i(o, QStringLiteral("MaxH"), d.maxH);
+
+    if (!QFile::exists(path)) {
+        QJsonObject def;
+        def[QStringLiteral("Min50V")] = m_limits.min50V;
+        def[QStringLiteral("Max50V")] = m_limits.max50V;
+        def[QStringLiteral("Min5V")]  = m_limits.min5V;
+        def[QStringLiteral("Max5V")]  = m_limits.max5V;
+        def[QStringLiteral("MinCs")]  = m_limits.minCs;
+        def[QStringLiteral("MaxT")]   = m_limits.maxT;
+        def[QStringLiteral("MaxH")]   = m_limits.maxH;
+        JsonFile::write(path, def);
+    }
 }

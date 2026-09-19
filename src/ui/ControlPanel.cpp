@@ -64,9 +64,10 @@ ControlPanel::ControlPanel(QWidget *parent)
 
     m_splitter->addWidget(m_tabs);
     m_splitter->addWidget(m_amplitude);
-    m_splitter->setStretchFactor(0, 3);
+    m_splitter->setStretchFactor(0, 4);
     m_splitter->setStretchFactor(1, 1);
-    m_splitter->setSizes({750, 250});
+    // Panel 2.1 (các tab điều khiển) 80% chiều dọc, panel 2.2 (biên độ) 20%.
+    m_splitter->setSizes({800, 200});
 
     lay->addWidget(m_splitter);
 }

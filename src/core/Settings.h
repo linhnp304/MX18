@@ -1,15 +1,23 @@
 #pragma once
 
 #include <QColor>
+#include <QJsonObject>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
-// Bốn nhóm cấu hình, mỗi nhóm một file trong ./settings để anh Linh sửa tay được:
-//   swinfo.json  - chữ trên màn hình giới thiệu và ô thông tin phần mềm
-//   setups.json  - lựa chọn hiển thị của trắc thủ, ghi lại mỗi lần đổi
-//   checkip.json - danh sách nút mạng cần ping
-//   params.json  - tham số mức kỹ sư (kể cả mật khẩu)
+// Mỗi nhóm cấu hình một file trong ./settings để anh Linh sửa tay được:
+//   swinfo.json      - chữ trên màn hình giới thiệu và ô thông tin phần mềm
+//   setups.json      - lựa chọn hiển thị của trắc thủ, ghi lại mỗi lần đổi
+//   checkip.json     - danh sách nút mạng cần ping
+//   setupadmin.json  - thiết lập cửa sổ mức kỹ sư, kể cả mật khẩu
+//   statuserror.json - ngưỡng báo lỗi của các giá trị trạng thái MH
+//   params.json      - tham số đài (tab "Params", giai đoạn sau)
+//   connect.json     - cấu hình cổng gửi/nhận (xem net/LinkConfig.h)
+//
+// Quy tắc chung: thiếu file thì tạo mặc định, có file mà đọc lỗi thì giữ giá trị
+// mặc định và đẩy một dòng [Lỗi] vào "Thông báo hệ thống" (xem takeLoadErrors).
 
 struct SwInfo {
     QString line0 = QStringLiteral("MX18 (V2026)");                       // màn hình giới thiệu
@@ -46,6 +54,17 @@ struct Setups {
     double radarLon = 105.813417;
 };
 
+// Ngưỡng báo lỗi cho cửa sổ "Trạng thái MH" (./settings/statuserror.json).
+struct StatusLimits {
+    double min50V = 44.0;
+    double max50V = 56.0;
+    double min5V  = 4.4;
+    double max5V  = 5.6;
+    int minCs = 60;     // công suất phát tối thiểu khi đang nối phát
+    int maxT  = 90;     // nhiệt độ tối đa
+    int maxH  = 99;     // độ ẩm tối đa
+};
+
 struct NetNode {
     QString name;
     QString address;
@@ -65,14 +84,24 @@ public:
 
     SwInfo &swInfo() { return m_swInfo; }
     Setups &setups() { return m_setups; }
+    const StatusLimits &statusLimits() const { return m_limits; }
     const QVector<NetNode> &netNodes() const { return m_netNodes; }
+    void setNetNodes(const QVector<NetNode> &nodes);
 
     QString engineerPassword() const { return m_engineerPassword; }
-    void setEngineerPassword(const QString &pw);
+
+    // Ô "Khóa điều khiển" ở góc dưới cửa sổ mức kỹ sư.
+    bool adminLocked() const { return m_adminLocked; }
+    void setAdminLocked(bool locked);
 
     void saveSetups();
     void saveSwInfo();
-    void saveParams();
+    void saveSetupAdmin();
+    void saveNetNodes();
+
+    // Lỗi đọc cấu hình gom lại lúc load(); MainWindow lấy ra để hiện [Lỗi]
+    // sau khi cửa sổ thông báo đã dựng xong.
+    QStringList takeLoadErrors();
 
 signals:
     void setupsChanged();        // phát sau mỗi lần trắc thủ đổi lựa chọn
@@ -86,10 +115,17 @@ private:
     void loadSwInfo();
     void loadSetups();
     void loadNetNodes();
-    void loadParams();
+    void loadSetupAdmin();
+    void loadStatusLimits();
+
+    // Đọc một file cấu hình, ghi lại lỗi cú pháp vào m_loadErrors.
+    QJsonObject readChecked(const QString &path);
 
     SwInfo m_swInfo;
     Setups m_setups;
+    StatusLimits m_limits;
     QVector<NetNode> m_netNodes;
     QString m_engineerPassword = QStringLiteral("X18");
+    bool m_adminLocked = true;
+    QStringList m_loadErrors;
 };

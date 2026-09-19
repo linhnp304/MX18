@@ -2,10 +2,16 @@
 
 #include "core/AppPaths.h"
 #include "core/Settings.h"
+#include "net/DataLink.h"
 #include "net/PingService.h"
+#include "proto/Dataframe.h"
+#include "proto/Packets.h"
+#include "ui/AmplitudeView.h"
 #include "ui/ControlPanel.h"
 #include "ui/ControlTab.h"
+#include "ui/EngineerWindow.h"
 #include "ui/MapView.h"
+#include "ui/MhStatusPopup.h"
 #include "ui/Popups.h"
 #include "ui/SettingsTab.h"
 #include "ui/SetupDialogs.h"
@@ -16,6 +22,7 @@
 #include <QMessageBox>
 #include <QSplitter>
 #include <QTabWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QVariantAnimation>
 
@@ -23,17 +30,36 @@ MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
     setWindowTitle(QStringLiteral("MX18 — Phần mềm trắc thủ ra đa"));
+
+    // Đọc cấu hình cổng gửi/nhận trước khi dựng giao diện: cửa sổ kỹ sư và nút
+    // "Kết nối hệ thống" đều dùng chung bản cấu hình này.
+    m_linkConfig = LinkConfig::load(&m_linkConfigError);
+
     buildUi();
     wireSignals();
     startPing();
 
     notify(QStringLiteral("Khởi động phần mềm MX18."));
+    reportConfigErrors();
 }
 
 MainWindow::~MainWindow()
 {
     if (m_ping)
         m_ping->stop();
+    if (m_links)
+        m_links->stop();
+}
+
+void MainWindow::reportConfigErrors()
+{
+    // File cấu hình hỏng thì phần mềm vẫn chạy với giá trị mặc định; trắc thủ
+    // đọc dòng [Lỗi] rồi tìm kỹ sư sửa file.
+    const QStringList errors = Settings::instance().takeLoadErrors();
+    for (const QString &e : errors)
+        notify(e, true);
+    if (!m_linkConfigError.isEmpty())
+        notify(m_linkConfigError, true);
 }
 
 void MainWindow::buildUi()
@@ -67,8 +93,7 @@ void MainWindow::buildUi()
     // Popup là con của central widget nên hiệu ứng trượt nằm gọn trong cửa sổ.
     m_notifyPopup = new NotifyPopup(central);
     m_networkPopup = new NetworkPopup(central);
-    auto *mhPopup = new PlaceholderPopup(QStringLiteral("Trạng thái MH"),
-                                         QStringLiteral("Nội dung trạng thái MH\n(giai đoạn sau)"), central);
+    m_mhPopup = new MhStatusPopup(central);
     auto *scnPopup = new PlaceholderPopup(QStringLiteral("Trạng thái SCN"),
                                           QStringLiteral("Nội dung trạng thái SCN\n(giai đoạn sau)"), central);
     auto *svrPopup = new PlaceholderPopup(QStringLiteral("Trạng thái SVR"),
@@ -78,7 +103,7 @@ void MainWindow::buildUi()
     m_popups.resize(StatusPanel::PopupCount);
     m_popups[StatusPanel::Notify] = m_notifyPopup;
     m_popups[StatusPanel::Network] = m_networkPopup;
-    m_popups[StatusPanel::MhStatus] = mhPopup;
+    m_popups[StatusPanel::MhStatus] = m_mhPopup;
     m_popups[StatusPanel::ScnStatus] = scnPopup;
     m_popups[StatusPanel::SvrStatus] = svrPopup;
     m_popups[StatusPanel::RadarCenter] = m_radarPopup;
@@ -88,6 +113,13 @@ void MainWindow::buildUi()
                             Settings::instance().setups().radarLon);
 
     m_colorDialog = new ColorSetupDialog(this);
+    m_engineerWindow = new EngineerWindow(this);
+
+    m_links = new LinkManager(this);
+    m_links->setConfig(m_linkConfig);
+
+    m_angleTimer = new QTimer(this);
+    m_angleTimer->setInterval(100);
 
     m_panelAnim = new QVariantAnimation(this);
     m_panelAnim->setDuration(200);
@@ -119,17 +151,28 @@ void MainWindow::wireSignals()
         notify(QStringLiteral("Đã áp dụng thiết lập màu sắc và tham số hiển thị."));
     });
 
-    connect(m_controlPanel->controlTab(), &ControlTab::engineerRequested, this, [this] {
-        EngineerPasswordDialog dlg(this);
-        if (dlg.exec() != QDialog::Accepted)
-            return;
-        notify(QStringLiteral("Mở cửa sổ điều khiển mức kỹ sư."));
-        EngineerDialog eng(this);
-        eng.exec();
-    });
-    connect(m_controlPanel->controlTab(), &ControlTab::lockChanged, this, [this](bool unlocked) {
+    ControlTab *ctrl = m_controlPanel->controlTab();
+    connect(ctrl, &ControlTab::engineerRequested, this, &MainWindow::openEngineerWindow);
+    connect(ctrl, &ControlTab::lockChanged, this, [this](bool unlocked) {
         notify(unlocked ? QStringLiteral("Đã mở khóa điều khiển.")
                         : QStringLiteral("Đã khóa điều khiển."));
+    });
+    connect(ctrl, &ControlTab::unlockDenied, this, [this] {
+        notify(QStringLiteral("Phải bấm \"Kết nối hệ thống\" trong tab Cài đặt trước khi mở "
+                              "khóa điều khiển."), true);
+    });
+    connect(ctrl, &ControlTab::cmdAtChanged, this, &MainWindow::sendCmdAt);
+    connect(ctrl, &ControlTab::cmdUserChanged, this, &MainWindow::sendCmdUser);
+
+    connect(m_engineerWindow, &EngineerWindow::configSaved, this,
+            [this](const QString &message) { notify(message); });
+
+    connect(m_links, &LinkManager::frameReceived, this, &MainWindow::onFrame);
+    connect(m_links, &LinkManager::message, this,
+            [this](const QString &text, bool isError) { notify(text, isError); });
+
+    connect(m_angleTimer, &QTimer::timeout, this, [this] {
+        m_statusPanel->setSweepAngles(m_hasAngles, m_azRd, m_azMh);
     });
 
     connect(m_radarPopup, &RadarCenterPopup::applyRequested, this, [this](double lat, double lon) {
@@ -299,12 +342,106 @@ void MainWindow::toggleControlPanel()
     m_panelAnim->start();
 }
 
+// --------------------------------------------------- gói tin nhận được
+
+void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &data)
+{
+    const bool be = m_linkConfig.bigEndian;
+
+    switch (category) {
+    case Proto::CatVideoR: {
+        if (data.size() < 4)
+            return;
+        m_azRd = Proto::readU32(data.constData(), be) * Video::kAzimuthLsb;
+        m_hasAngles = true;
+        m_mapView->setRadarSweep(m_azRd);
+        return;
+    }
+    case Proto::CatVideoI: {
+        if (data.size() < Video::kDataBytes)
+            return;
+        m_azMh = Proto::readU32(data.constData(), be) * Video::kAzimuthLsb;
+        m_hasAngles = true;
+        const QByteArray video = data.mid(4, Video::kSamples);
+        m_mapView->setMhSweep(m_azMh, video);
+        m_controlPanel->amplitudeView()->setTrace(video);
+        return;
+    }
+    case Proto::CatStatusMh: {
+        quint32 fields[StatusMh::Count] = {0};
+        if (!Proto::unpackFields(data, fields, StatusMh::Count, be))
+            return;
+        m_mhPopup->setStatus(fields, serial);
+        m_statusPanel->setPopupState(StatusPanel::MhStatus,
+                                     m_mhPopup->hasError() ? StatusPanel::Error : StatusPanel::Ok);
+        return;
+    }
+    case Proto::CatCmdUserBack: {
+        quint32 fields[CmdUser::Count] = {0};
+        if (!Proto::unpackFields(data, fields, CmdUser::Count, be))
+            return;
+        // Chỉ khi MH báo đang nối phát mới coi công suất thấp là lỗi.
+        m_mhPopup->setTransmitOn(fields[CmdUser::Noiphat] == 1);
+        return;
+    }
+    default:
+        return;
+    }
+}
+
+void MainWindow::sendCmdAt()
+{
+    if (!m_links->isRunning())
+        return;
+    const QByteArray data = Proto::packFields(m_controlPanel->controlTab()->cmdAtFields(),
+                                              CmdAt::Count, m_linkConfig.bigEndian);
+    m_links->send(QStringLiteral("Cmd-Admin"), Proto::CatCmdAt, data);
+}
+
+void MainWindow::sendCmdUser()
+{
+    if (!m_links->isRunning())
+        return;
+    const QByteArray data = Proto::packFields(m_controlPanel->controlTab()->cmdUserFields(),
+                                              CmdUser::Count, m_linkConfig.bigEndian);
+    m_links->send(QStringLiteral("Cmd-User"), Proto::CatCmdUser, data);
+}
+
+void MainWindow::openEngineerWindow()
+{
+    // Mật khẩu chỉ hỏi một lần cho mỗi lần chạy phần mềm.
+    if (!EngineerWindow::passwordAccepted()) {
+        EngineerPasswordDialog dlg(this);
+        if (dlg.exec() != QDialog::Accepted)
+            return;
+        EngineerWindow::rememberPassword();
+        notify(QStringLiteral("Đã mở quyền điều khiển mức kỹ sư."));
+    }
+    m_engineerWindow->show();
+    m_engineerWindow->raise();
+    m_engineerWindow->activateWindow();
+}
+
 // ------------------------------------------------------------- kết nối
 
 void MainWindow::setConnected(bool connected)
 {
     m_connected = connected;
     m_controlPanel->settingsTab()->setConnected(connected);
+    m_controlPanel->controlTab()->setSystemConnected(connected);
+
+    if (connected) {
+        m_links->start();
+        m_angleTimer->start();
+    } else {
+        m_links->stop();
+        m_angleTimer->stop();
+        m_hasAngles = false;
+        m_mapView->clearVideo();
+        m_controlPanel->amplitudeView()->clearTrace();
+        m_mhPopup->clearStatus();
+        m_statusPanel->setSweepAngles(false, 0.0, 0.0);
+    }
 
     // Chưa kết nối thì các trạng thái MH/SCN/SVR để màu trắng xám.
     const StatusPanel::StateColor c = connected ? StatusPanel::Ok : StatusPanel::Idle;

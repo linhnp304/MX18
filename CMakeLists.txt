@@ -44,6 +44,15 @@ set(MX18_SOURCES
 
     src/net/PingService.cpp
     src/net/PingService.h
+    src/net/LinkConfig.cpp
+    src/net/LinkConfig.h
+    src/net/DataLink.cpp
+    src/net/DataLink.h
+
+    src/proto/Dataframe.cpp
+    src/proto/Dataframe.h
+    src/proto/Packets.cpp
+    src/proto/Packets.h
 
     src/ui/Theme.cpp
     src/ui/Theme.h
@@ -61,6 +70,12 @@ set(MX18_SOURCES
     src/ui/SettingsTab.h
     src/ui/ControlTab.cpp
     src/ui/ControlTab.h
+    src/ui/ControlWidgets.cpp
+    src/ui/ControlWidgets.h
+    src/ui/MhStatusPopup.cpp
+    src/ui/MhStatusPopup.h
+    src/ui/EngineerWindow.cpp
+    src/ui/EngineerWindow.h
     src/ui/StatusPanel.cpp
     src/ui/StatusPanel.h
     src/ui/SlidePopup.cpp

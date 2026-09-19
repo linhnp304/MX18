@@ -46,10 +46,3 @@ private:
     QLineEdit *m_password = nullptr;
 };
 
-// Cửa sổ "Điều khiển kỹ sư": tham số lưu trong ./settings/params.json.
-class EngineerDialog : public QDialog
-{
-    Q_OBJECT
-public:
-    explicit EngineerDialog(QWidget *parent = nullptr);
-};
