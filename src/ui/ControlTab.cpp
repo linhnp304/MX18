@@ -326,7 +326,8 @@ void ControlTab::buildTransmit(QWidget *parent)
     lay->addWidget(cdPhat);
     lay->addWidget(m_fan1);
     lay->addWidget(m_fan2);
-    LabeledRow::alignTitles({noiphat, kenhphu, csPhat, cdPhat});
+    // "Chế độ phát" có bốn lựa chọn khá dài nên nhóm này không nới thêm khoảng hở.
+    LabeledRow::alignTitles({noiphat, kenhphu, csPhat, cdPhat}, 0);
 }
 
 // ----------------------------------------------------- Hệ thống phát hiện

@@ -23,7 +23,11 @@ public:
     using QWidget::QWidget;
 
     QLabel *titleLabel() const { return m_title; }
-    static void alignTitles(const QVector<LabeledRow *> &rows);
+
+    // Căn các hàng trong cùng một nhóm về một bề rộng nhãn; gap là khoảng hở
+    // thêm giữa nhãn và điều khiển cho thoáng mắt. Nhóm nào có lựa chọn dài
+    // (như "Chế độ phát") thì truyền gap = 0 để khỏi tràn ra ngoài panel.
+    static void alignTitles(const QVector<LabeledRow *> &rows, int gap = 12);
 
 protected:
     QLabel *m_title = nullptr;

@@ -23,12 +23,15 @@ QLabel *captionLabel(const QString &text, QWidget *parent)
     return l;
 }
 
+// Mọi ô nhập trong tab "Điều khiển" dùng chung một bề rộng để nhìn đồng đều.
+constexpr int kSpinWidth = 96;
+
 QSpinBox *makeSpin(int lo, int hi, QWidget *parent)
 {
     auto *s = new QSpinBox(parent);
     s->setRange(lo, hi);
     s->setButtonSymbols(QAbstractSpinBox::UpDownArrows);
-    s->setMinimumWidth(62);
+    s->setFixedWidth(kSpinWidth);
     s->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     // Bàn phím máy trắc thủ hay bị gõ nhầm; ngăn con lăn chuột đổi giá trị khi
     // người dùng chỉ định cuộn danh sách lệnh.
@@ -40,13 +43,14 @@ QSpinBox *makeSpin(int lo, int hi, QWidget *parent)
 
 // ------------------------------------------------------------- LabeledRow
 
-void LabeledRow::alignTitles(const QVector<LabeledRow *> &rows)
+void LabeledRow::alignTitles(const QVector<LabeledRow *> &rows, int gap)
 {
     int width = 0;
     for (LabeledRow *r : rows) {
         if (r && r->m_title)
             width = qMax(width, r->m_title->sizeHint().width());
     }
+    width += qMax(0, gap);
     for (LabeledRow *r : rows) {
         if (r && r->m_title)
             r->m_title->setMinimumWidth(width);
@@ -133,7 +137,6 @@ SpinRow::SpinRow(const QString &title, int lo, int hi, QWidget *parent)
     m_spin = makeSpin(lo, hi, this);
     // Ô nhập bắt đầu ngay sau nhãn giống các lựa chọn của RadioRow, chỗ thừa
     // dồn về bên phải chứ không kéo giãn ô nhập ra hết hàng.
-    m_spin->setFixedWidth(96);
     lay->addWidget(m_spin);
     lay->addStretch(1);
 
@@ -172,9 +175,10 @@ DualSpinRow::DualSpinRow(const QString &title, const QString &captionA, const QS
     m_a = makeSpin(lo, hi, this);
     m_b = makeSpin(lo, hi, this);
     row->addWidget(captionLabel(captionA, this));
-    row->addWidget(m_a, 1);
+    row->addWidget(m_a);
     row->addWidget(captionLabel(captionB, this));
-    row->addWidget(m_b, 1);
+    row->addWidget(m_b);
+    row->addStretch(1);
     lay->addLayout(row);
 
     const auto onEdit = [this] {
