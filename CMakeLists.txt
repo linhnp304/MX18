@@ -72,6 +72,8 @@ set(MX18_SOURCES
     src/ui/ControlTab.h
     src/ui/ControlWidgets.cpp
     src/ui/ControlWidgets.h
+    src/ui/AdminTabs.cpp
+    src/ui/AdminTabs.h
     src/ui/MhStatusPopup.cpp
     src/ui/MhStatusPopup.h
     src/ui/EngineerWindow.cpp

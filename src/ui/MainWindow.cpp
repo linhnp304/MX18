@@ -18,6 +18,7 @@
 #include "ui/Theme.h"
 
 #include <QKeyEvent>
+#include <QVector>
 #include <QCloseEvent>
 #include <QMessageBox>
 #include <QSplitter>
@@ -166,6 +167,13 @@ void MainWindow::wireSignals()
 
     connect(m_engineerWindow, &EngineerWindow::configSaved, this,
             [this](const QString &message) { notify(message); });
+    connect(m_engineerWindow, &EngineerWindow::commandReady, this, &MainWindow::sendAdminCommand);
+    connect(m_engineerWindow, &EngineerWindow::rebootRequested, this, &MainWindow::sendRebootMh);
+
+    connect(m_links, &LinkManager::frameSent, this,
+            [this](quint32 category, quint32 serial) {
+                m_engineerWindow->noteSent(category, serial);
+            });
 
     connect(m_links, &LinkManager::frameReceived, this, &MainWindow::onFrame);
     connect(m_links, &LinkManager::message, this,
@@ -382,6 +390,38 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
             return;
         // Chỉ khi MH báo đang nối phát mới coi công suất thấp là lỗi.
         m_mhPopup->setTransmitOn(fields[CmdUser::Noiphat] == 1);
+        m_controlPanel->controlTab()->applyCmdUserFeedback(fields);
+        return;
+    }
+    case Proto::CatCmdAtBack: {
+        quint32 fields[CmdAt::Count] = {0};
+        if (!Proto::unpackFields(data, fields, CmdAt::Count, be))
+            return;
+        m_controlPanel->controlTab()->applyCmdAtFeedback(fields);
+        return;
+    }
+    default:
+        break;
+    }
+
+    // Phản hồi lệnh mức kỹ sư và hai gói trạng thái của cửa sổ kỹ sư: số trường
+    // mỗi gói một khác nên mở gói theo độ dài thật rồi để cửa sổ tự phân loại.
+    switch (category) {
+    case Proto::CatCmdAdminBack:
+    case Proto::CatCmdAdminAdBack:
+    case Proto::CatCmdAdminSwBack:
+    case Proto::CatCmdAdminOtherBack:
+    case Proto::CatCmdAdminCalibRegBack:
+    case Proto::CatCmdAdminBuphabdBack:
+    case Proto::CatStatusCalib:
+    case Proto::CatStatusParams: {
+        const int count = int(data.size() / 4);
+        if (count <= 0)
+            return;
+        QVector<quint32> fields(count, 0);
+        if (!Proto::unpackFields(data, fields.data(), count, be))
+            return;
+        m_engineerWindow->applyFrame(category, serial, fields.constData(), count);
         return;
     }
     default:
@@ -405,6 +445,46 @@ void MainWindow::sendCmdUser()
     const QByteArray data = Proto::packFields(m_controlPanel->controlTab()->cmdUserFields(),
                                               CmdUser::Count, m_linkConfig.bigEndian);
     m_links->send(QStringLiteral("Cmd-User"), Proto::CatCmdUser, data);
+}
+
+void MainWindow::sendAdminCommand(quint32 category, const QVector<quint32> &fields)
+{
+    if (!m_links->isRunning()) {
+        notify(QStringLiteral("Chưa kết nối hệ thống, lệnh mức kỹ sư không gửi đi được."), true);
+        return;
+    }
+    const QByteArray data = Proto::packFields(fields.constData(), fields.size(),
+                                              m_linkConfig.bigEndian);
+    if (!m_links->send(QStringLiteral("Cmd-Admin"), category, data)) {
+        notify(QStringLiteral("connect.json không có dòng \"Cmd-Admin\" để gửi lệnh mức kỹ sư."),
+               true);
+    }
+}
+
+void MainWindow::sendRebootMh()
+{
+    if (!m_links->isRunning()) {
+        notify(QStringLiteral("Chưa kết nối hệ thống, không gửi được lệnh khởi động lại MH."), true);
+        return;
+    }
+    const auto answer = QMessageBox::question(m_engineerWindow,
+                                              QStringLiteral("Khởi động lại hệ thống XL MH"),
+                                              QStringLiteral("Khởi động lại hệ thống xử lý MH?"),
+                                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes)
+        return;
+
+    // Lệnh này không theo khung Dataframe: đúng 4 byte cố định.
+    static const char kRebootMh[4] = {char(0xad), char(0xbc), char(0xef), char(0xac)};
+    if (!m_links->sendRaw(QStringLiteral("Cmd-RebootMH"), QByteArray(kRebootMh, 4))) {
+        notify(QStringLiteral("connect.json không có dòng \"Cmd-RebootMH\"."), true);
+        return;
+    }
+    // Khoá điều khiển lại để chờ hệ thống MH khởi động xong.
+    Settings::instance().setAdminLocked(true);
+    m_engineerWindow->setLocked(true);
+    notify(QStringLiteral("Đã gửi lệnh khởi động lại hệ thống XL MH, điều khiển mức kỹ sư "
+                          "tự khóa lại."));
 }
 
 void MainWindow::openEngineerWindow()
@@ -440,6 +520,7 @@ void MainWindow::setConnected(bool connected)
         m_mapView->clearVideo();
         m_controlPanel->amplitudeView()->clearTrace();
         m_mhPopup->clearStatus();
+        m_engineerWindow->clearBack();
         m_statusPanel->setSweepAngles(false, 0.0, 0.0);
     }
 

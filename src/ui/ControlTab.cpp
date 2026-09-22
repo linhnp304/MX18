@@ -115,8 +115,9 @@ QGroupBox *ControlTab::addGroup(const QString &title, QWidget *parent)
     return g;
 }
 
-void ControlTab::bind(RadioRow *row, quint32 *slot, bool isAntenna)
+void ControlTab::bind(RadioRow *row, int field, bool isAntenna)
 {
+    quint32 *slot = (isAntenna ? m_at : m_user) + field;
     row->setValue(*slot);
     connect(row, &RadioRow::valueChanged, this, [this, slot, isAntenna](quint32 v) {
         *slot = v;
@@ -124,11 +125,20 @@ void ControlTab::bind(RadioRow *row, quint32 *slot, bool isAntenna)
             emit cmdAtChanged();
         else
             emit cmdUserChanged();
+        // Vừa gửi xong thì giá trị phản hồi cũ không còn ý nghĩa để đối chiếu;
+        // chờ gói phản hồi kế tiếp mới tô lại màu đỏ.
+        refreshFeedback();
     });
+
+    Binding b;
+    b.radio = row;
+    b.fieldA = field;
+    (isAntenna ? m_atBindings : m_userBindings).append(b);
 }
 
-void ControlTab::bind(SpinRow *row, quint32 *slot, bool isAntenna)
+void ControlTab::bind(SpinRow *row, int field, bool isAntenna)
 {
+    quint32 *slot = (isAntenna ? m_at : m_user) + field;
     row->setValue(*slot);
     connect(row, &SpinRow::valueChanged, this, [this, slot, isAntenna](quint32 v) {
         *slot = v;
@@ -136,7 +146,82 @@ void ControlTab::bind(SpinRow *row, quint32 *slot, bool isAntenna)
             emit cmdAtChanged();
         else
             emit cmdUserChanged();
+        refreshFeedback();
     });
+
+    Binding b;
+    b.spin = row;
+    b.fieldA = field;
+    (isAntenna ? m_atBindings : m_userBindings).append(b);
+}
+
+// ------------------------------------------------- trạng thái phản hồi lệnh
+
+void ControlTab::applyCmdAtFeedback(const quint32 *fields)
+{
+    memcpy(m_atBack, fields, sizeof(m_atBack));
+    m_hasAtBack = true;
+    applyFeedback(true);
+}
+
+void ControlTab::applyCmdUserFeedback(const quint32 *fields)
+{
+    memcpy(m_userBack, fields, sizeof(m_userBack));
+    m_hasUserBack = true;
+    applyFeedback(false);
+}
+
+void ControlTab::clearFeedback()
+{
+    m_hasAtBack = false;
+    m_hasUserBack = false;
+    refreshFeedback();
+}
+
+void ControlTab::refreshFeedback()
+{
+    applyFeedback(true);
+    applyFeedback(false);
+}
+
+// Đang khoá thì giao diện chạy theo trạng thái thật của hệ thống MH; đang mở
+// khoá thì giữ nguyên giá trị trắc thủ đang đặt và chỉ đánh dấu đỏ chỗ lệch.
+void ControlTab::applyFeedback(bool isAntenna)
+{
+    const QVector<Binding> &bindings = isAntenna ? m_atBindings : m_userBindings;
+    const quint32 *back = isAntenna ? m_atBack : m_userBack;
+    quint32 *own = isAntenna ? m_at : m_user;
+    const bool has = isAntenna ? m_hasAtBack : m_hasUserBack;
+
+    for (const Binding &b : bindings) {
+        const bool differs = has && b.fieldA >= 0 && back[b.fieldA] != own[b.fieldA];
+        if (!m_unlocked && has && b.fieldA >= 0)
+            own[b.fieldA] = back[b.fieldA];
+
+        if (b.radio) {
+            if (!m_unlocked && has)
+                b.radio->setValue(own[b.fieldA]);
+            b.radio->setFeedback(m_unlocked && differs, has ? back[b.fieldA] : 0u);
+        } else if (b.spin) {
+            if (!m_unlocked && has)
+                b.spin->setValue(own[b.fieldA]);
+            b.spin->setFeedback(m_unlocked && differs, has ? back[b.fieldA] : 0u);
+        } else if (b.dual) {
+            const bool differsB = has && b.fieldB >= 0 && back[b.fieldB] != own[b.fieldB];
+            if (!m_unlocked && has) {
+                own[b.fieldB] = back[b.fieldB];
+                b.dual->setValues(own[b.fieldA], own[b.fieldB]);
+            }
+            b.dual->setFeedback(m_unlocked && differs, has ? back[b.fieldA] : 0u,
+                                m_unlocked && differsB, has ? back[b.fieldB] : 0u);
+        }
+    }
+
+    if (!isAntenna && !m_unlocked && has) {
+        // Lựa chọn thứ năm của "Chế độ hỏi" đổi theo icode1 vừa nạp về.
+        updateModeOptions();
+        updateGiaquayEnabled();
+    }
 }
 
 // ------------------------------------------------------- Điều khiển ăng ten
@@ -153,9 +238,9 @@ void ControlTab::buildAntenna(QWidget *parent)
     auto *sync = new RadioRow(QStringLiteral("Chế độ quay"),
                               {QStringLiteral("Độc lập"), QStringLiteral("Đồng bộ")}, k01, 0, g);
 
-    bind(onoff, &m_at[CmdAt::AntenOnoff], true);
-    bind(speed, &m_at[CmdAt::AntenSpeed], true);
-    bind(sync, &m_at[CmdAt::AntenSync], true);
+    bind(onoff, CmdAt::AntenOnoff, true);
+    bind(speed, CmdAt::AntenSpeed, true);
+    bind(sync, CmdAt::AntenSync, true);
 
     lay->addWidget(onoff);
     lay->addWidget(speed);
@@ -181,12 +266,12 @@ void ControlTab::buildMh(QWidget *parent)
     auto *giaBd = new RadioRow(QStringLiteral("Giả báo động"), kOnOff, k01, 0, g);
     auto *giaBn = new RadioRow(QStringLiteral("Giả báo nạn"), kOnOff, k01, 0, g);
 
-    bind(nguonCs, &m_user[CmdUser::NguonCs], false);
-    bind(m_nguonPvi, &m_user[CmdUser::NguonPvi], false);
-    bind(m_vantocGiaquay, &m_user[CmdUser::VantocGiaquay], false);
-    bind(cdLamviec, &m_user[CmdUser::CdLamviec], false);
-    bind(giaBd, &m_user[CmdUser::GiaBd], false);
-    bind(giaBn, &m_user[CmdUser::GiaBn], false);
+    bind(nguonCs, CmdUser::NguonCs, false);
+    bind(m_nguonPvi, CmdUser::NguonPvi, false);
+    bind(m_vantocGiaquay, CmdUser::VantocGiaquay, false);
+    bind(cdLamviec, CmdUser::CdLamviec, false);
+    bind(giaBd, CmdUser::GiaBd, false);
+    bind(giaBn, CmdUser::GiaBn, false);
 
     // Vận tốc giả quay chỉ có nghĩa khi đường quét lấy từ bộ giả quay.
     connect(m_nguonPvi, &RadioRow::valueChanged, this, [this] { updateGiaquayEnabled(); });
@@ -232,12 +317,12 @@ void ControlTab::buildCodes(QWidget *parent)
     // nếu không gói đầu tiên sau khi đổi loại mục tiêu mang mode cũ.
     connect(m_icode1, &RadioRow::valueChanged, this, [this] { updateModeOptions(); });
 
-    bind(m_icode1, &m_user[CmdUser::Icode1], false);
-    bind(m_mode, &m_user[CmdUser::Mode], false);
-    bind(rcode1, &m_user[CmdUser::Rcode1], false);
-    bind(icode3, &m_user[CmdUser::Icode3], false);
-    bind(rcode3, &m_user[CmdUser::Rcode3], false);
-    bind(m_keyM2, &m_user[CmdUser::KeyM2], false);
+    bind(m_icode1, CmdUser::Icode1, false);
+    bind(m_mode, CmdUser::Mode, false);
+    bind(rcode1, CmdUser::Rcode1, false);
+    bind(icode3, CmdUser::Icode3, false);
+    bind(rcode3, CmdUser::Rcode3, false);
+    bind(m_keyM2, CmdUser::KeyM2, false);
 
     m_clearKeyBtn = new QPushButton(QStringLiteral("Xóa khóa"), g);
     connect(m_clearKeyBtn, &QPushButton::clicked, this, [this] {
@@ -298,10 +383,10 @@ void ControlTab::buildTransmit(QWidget *parent)
                                  QStringLiteral("Ngắt 1v"), QStringLiteral("Ngắt 2v")},
                                 {0, 1, 2, 3}, 4, g);
 
-    bind(noiphat, &m_user[CmdUser::Noiphat], false);
-    bind(kenhphu, &m_user[CmdUser::Kenhphu], false);
-    bind(csPhat, &m_user[CmdUser::CsPhat], false);
-    bind(cdPhat, &m_user[CmdUser::CdPhat], false);
+    bind(noiphat, CmdUser::Noiphat, false);
+    bind(kenhphu, CmdUser::Kenhphu, false);
+    bind(csPhat, CmdUser::CsPhat, false);
+    bind(cdPhat, CmdUser::CdPhat, false);
 
     m_fan1 = new DualSpinRow(QStringLiteral("Rẻ quạt 1 (độ)"), QStringLiteral("PV đầu"),
                              QStringLiteral("PV cuối"), 0, 359, g);
@@ -313,12 +398,18 @@ void ControlTab::buildTransmit(QWidget *parent)
         m_user[CmdUser::Azm1] = m_fan1->valueA();
         m_user[CmdUser::Azm2] = m_fan1->valueB();
         emit cmdUserChanged();
+        refreshFeedback();
     });
     connect(m_fan2, &DualSpinRow::valueChanged, this, [this] {
         m_user[CmdUser::Azm3] = m_fan2->valueA();
         m_user[CmdUser::Azm4] = m_fan2->valueB();
         emit cmdUserChanged();
+        refreshFeedback();
     });
+
+    for (const Binding &b : {Binding{nullptr, nullptr, m_fan1, CmdUser::Azm1, CmdUser::Azm2},
+                             Binding{nullptr, nullptr, m_fan2, CmdUser::Azm3, CmdUser::Azm4}})
+        m_userBindings.append(b);
 
     lay->addWidget(noiphat);
     lay->addWidget(kenhphu);
@@ -347,15 +438,15 @@ void ControlTab::buildDetect(QWidget *parent)
     auto *th1 = new SpinRow(QStringLiteral("Ngưỡng phát hiện 1"), 0, 65535, g);
     auto *th2 = new SpinRow(QStringLiteral("Ngưỡng phát hiện 2"), 0, 65535, g);
 
-    bind(stc, &m_user[CmdUser::HsStc], false);
-    bind(cnKdb, &m_user[CmdUser::CnKdb], false);
-    bind(cnAk, &m_user[CmdUser::CnAk], false);
-    bind(mono, &m_user[CmdUser::Monopulse], false);
-    bind(mono1, &m_user[CmdUser::NguongMonopulse], false);
-    bind(mono2, &m_user[CmdUser::NguongMonopulse2], false);
-    bind(hsAk, &m_user[CmdUser::HsAk], false);
-    bind(th1, &m_user[CmdUser::NguongXungdon], false);
-    bind(th2, &m_user[CmdUser::NguongXungdon2], false);
+    bind(stc, CmdUser::HsStc, false);
+    bind(cnKdb, CmdUser::CnKdb, false);
+    bind(cnAk, CmdUser::CnAk, false);
+    bind(mono, CmdUser::Monopulse, false);
+    bind(mono1, CmdUser::NguongMonopulse, false);
+    bind(mono2, CmdUser::NguongMonopulse2, false);
+    bind(hsAk, CmdUser::HsAk, false);
+    bind(th1, CmdUser::NguongXungdon, false);
+    bind(th2, CmdUser::NguongXungdon2, false);
 
     const QVector<LabeledRow *> rows = {stc, cnKdb, cnAk, mono, mono1, mono2, hsAk, th1, th2};
     for (LabeledRow *row : rows)
@@ -402,6 +493,9 @@ void ControlTab::setUnlocked(bool unlocked)
         g->setEnabled(unlocked);
     if (unlocked)
         updateGiaquayEnabled();
+    // Khoá lại thì giao diện bám theo trạng thái thật của MH, mở khoá thì
+    // chuyển sang đánh dấu đỏ chỗ lệch — cả hai đều nằm trong applyFeedback().
+    refreshFeedback();
     emit lockChanged(unlocked);
 }
 
@@ -411,4 +505,6 @@ void ControlTab::setSystemConnected(bool connected)
     // Dừng kết nối thì khoá lại ngay: lệnh gửi đi lúc này không tới được MH.
     if (!connected && m_unlocked)
         setUnlocked(false);
+    if (!connected)
+        clearFeedback();
 }

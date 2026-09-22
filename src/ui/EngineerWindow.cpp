@@ -1,5 +1,8 @@
 #include "ui/EngineerWindow.h"
 
+#include "proto/Dataframe.h"
+#include "ui/AdminTabs.h"
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QGroupBox>
@@ -11,10 +14,12 @@
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
+#include <QScreen>
 #include <QScrollBar>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <utility> // std::as_const — MSVC không kéo theo qua header Qt
@@ -91,21 +96,42 @@ EngineerWindow::EngineerWindow(QWidget *parent)
     m_tabs = new QTabWidget(this);
     m_tabs->setDocumentMode(true);
 
-    // Bốn tab đầu chịu ảnh hưởng của ô "Khóa điều khiển".
-    for (const QString &name : {QStringLiteral("Admin"), QStringLiteral("AD"),
-                                QStringLiteral("SW"), QStringLiteral("Other")}) {
-        QWidget *page = buildPlaceholderTab(
-            QStringLiteral("Nội dung tab \"%1\" bổ sung ở giai đoạn sau.").arg(name));
-        m_lockedTabs.append(page);
-        m_tabs->addTab(page, name);
-    }
-    m_tabs->addTab(buildPlaceholderTab(
-                       QStringLiteral("Tham số đài lưu trong settings/params.json,\n"
-                                      "bổ sung ở giai đoạn sau.")),
-                   QStringLiteral("Params"));
+    m_adminTab = new AdminTab(m_tabs);
+    m_adTab = new AdTab(m_tabs);
+    m_swTab = new SwTab(m_tabs);
+    m_otherTab = new OtherTab(m_tabs);
+    m_paramsTab = new ParamsTab(m_tabs);
+    m_commandTabs = {m_adminTab, m_adTab, m_swTab, m_otherTab, m_paramsTab};
+
+    m_tabs->addTab(m_adminTab, QStringLiteral("ADMIN"));
+    m_tabs->addTab(m_adTab, QStringLiteral("AD"));
+    m_tabs->addTab(m_swTab, QStringLiteral("SW"));
+    m_tabs->addTab(m_otherTab, QStringLiteral("Other"));
+    m_tabs->addTab(m_paramsTab, QStringLiteral("Params"));
     m_tabs->addTab(buildConnectTab(), QStringLiteral("Connect"));
     m_tabs->setCurrentIndex(m_tabs->count() - 1);
+
+    // Serial của gói phản hồi "sát bên phải tab": một nhãn chung ở góc thanh
+    // tab, đổi nội dung theo tab đang xem.
+    m_cornerSerial = new QLabel(m_tabs);
+    m_cornerSerial->setStyleSheet(QStringLiteral("color:#8a95a1;padding-right:6px;"));
+    m_tabs->setCornerWidget(m_cornerSerial, Qt::TopRightCorner);
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this] { updateCornerSerial(); });
+    for (EngineerTab *t : std::as_const(m_commandTabs))
+        connect(t, &EngineerTab::cornerSerialChanged, this, &EngineerWindow::updateCornerSerial);
+
+    m_blocks = {m_adminTab->block(), m_adTab->block(), m_swTab->block(),
+                m_otherTab->other(), m_otherTab->calibReg(), m_otherTab->buphabd()};
+    for (CommandBlock *b : std::as_const(m_blocks))
+        wireBlock(b);
+
+    // Đổi chế độ hiệu chuẩn bên tab ADMIN thì kéo theo cặp tần số bên tab AD.
+    connect(m_adminTab, &AdminTab::calibPresetRequested, m_adTab, &AdTab::selectPreset);
+
+    connect(m_otherTab, &OtherTab::rebootRequested, this, &EngineerWindow::rebootRequested);
+
     lay->addWidget(m_tabs, 1);
+    updateCornerSerial();
 
     // Ô khoá ở góc dưới bên trái theo đặc tả.
     auto *bottom = new QHBoxLayout;
@@ -120,22 +146,24 @@ EngineerWindow::EngineerWindow(QWidget *parent)
     connect(closeBtn, &QPushButton::clicked, this, &QWidget::close);
     connect(m_lockBox, &QCheckBox::toggled, this, [this](bool locked) {
         Settings::instance().setAdminLocked(locked);
-        for (QWidget *w : std::as_const(m_lockedTabs))
-            w->setEnabled(!locked);
+        for (EngineerTab *t : std::as_const(m_commandTabs))
+            t->setLocked(locked);
     });
-    for (QWidget *w : std::as_const(m_lockedTabs))
-        w->setEnabled(!m_lockBox->isChecked());
+    for (EngineerTab *t : std::as_const(m_commandTabs))
+        t->setLocked(m_lockBox->isChecked());
 
-    // Kích thước tự nhiên: các điều khiển xếp dọc, chiều ngang vừa đúng bảng 8
-    // cột chứ không rộng hơn — hẹp hơn là kỹ sư phải cuộn ngang mới thấy
-    // RemoteIP/RemotePort. Chiều cao do fitTable() ở trên quyết định.
+    // Kích thước tự nhiên: chiều ngang vừa đúng bảng 8 cột của tab "Connect"
+    // (hẹp hơn là kỹ sư phải cuộn ngang mới thấy RemoteIP/RemotePort), chiều
+    // cao lấy đủ cho tab "ADMIN" — tab dài nhất — nhưng không quá màn hình.
     int tableWidth = 2 * m_links->frameWidth()
                      + m_links->verticalScrollBar()->sizeHint().width();
     for (int c = 0; c < m_links->columnCount(); ++c)
         tableWidth += m_links->columnWidth(c);
 
     layout()->activate();
-    const QSize natural(qBound(560, tableWidth + 44, 1100), sizeHint().height());
+    const QRect avail = screen() ? screen()->availableGeometry() : QRect(0, 0, 1280, 1024);
+    const QSize natural(qBound(560, tableWidth + 44, 1100),
+                        qMin(qMax(sizeHint().height(), 940), int(avail.height() * 0.92)));
     resize(natural);
 
     // Lấy xong kích thước tự nhiên thì hạ sàn của hai bảng xuống còn 3 dòng và
@@ -169,15 +197,72 @@ void EngineerWindow::fitTable(QTableWidget *table, int visibleRows)
                             + 2 * table->frameWidth() + scrollBar);
 }
 
-QWidget *EngineerWindow::buildPlaceholderTab(const QString &note)
+// -------------------------------------------------------- lệnh mức kỹ sư
+
+void EngineerWindow::wireBlock(CommandBlock *block)
 {
-    auto *w = new QWidget(m_tabs);
-    auto *lay = new QVBoxLayout(w);
-    auto *lbl = new QLabel(note, w);
-    lbl->setAlignment(Qt::AlignCenter);
-    lbl->setStyleSheet(QStringLiteral("color:#5d666f;font-style:italic;"));
-    lay->addWidget(lbl);
-    return w;
+    connect(block, &CommandBlock::sendRequested, this, [this, block] {
+        // Đổi chế độ hiệu chuẩn thì AD9361 phải đổi tần số trước, nếu không hệ
+        // thống hiệu chuẩn ở sai tần số: gửi CMD_ADMIN_AD rồi 100 ms sau mới
+        // gửi CMD_ADMIN.
+        if (block == m_adminTab->block() && m_adminTab->needsAdFirst()) {
+            emit commandReady(m_adTab->block()->category(), m_adTab->block()->fields());
+            QTimer::singleShot(100, this, [this, block] {
+                emit commandReady(block->category(), block->fields());
+            });
+            return;
+        }
+        emit commandReady(block->category(), block->fields());
+    });
+}
+
+void EngineerWindow::applyFrame(quint32 category, quint32 serial, const quint32 *fields, int count)
+{
+    if (category == Proto::CatStatusCalib) {
+        if (count >= StatusCalib::Count)
+            m_adminTab->applyCalibStatus(fields, serial);
+        return;
+    }
+    if (category == Proto::CatStatusParams) {
+        if (count >= StatusParams::kCount)
+            m_paramsTab->applyParams(fields, serial);
+        return;
+    }
+    for (CommandBlock *b : std::as_const(m_blocks)) {
+        if (b->backCategory() == category && count >= b->fields().size()) {
+            b->applyBack(fields, serial);
+            return;
+        }
+    }
+}
+
+void EngineerWindow::noteSent(quint32 category, quint32 serial)
+{
+    for (CommandBlock *b : std::as_const(m_blocks)) {
+        if (b->category() == category) {
+            b->noteSent(serial);
+            return;
+        }
+    }
+}
+
+void EngineerWindow::clearBack()
+{
+    for (EngineerTab *t : std::as_const(m_commandTabs))
+        t->clearBack();
+    updateCornerSerial();
+}
+
+void EngineerWindow::setLocked(bool locked)
+{
+    m_lockBox->setChecked(locked);
+}
+
+void EngineerWindow::updateCornerSerial()
+{
+    QWidget *current = m_tabs->currentWidget();
+    auto *tab = qobject_cast<EngineerTab *>(current);
+    m_cornerSerial->setText(tab ? tab->cornerSerialText() : QString());
 }
 
 // ------------------------------------------------------------- tab Connect
@@ -206,7 +291,7 @@ QWidget *EngineerWindow::buildConnectTab()
 
     auto *linkBtns = new QHBoxLayout;
     auto *saveLinkBtn = new QPushButton(QStringLiteral("Lưu cấu hình"), linkBox);
-    // Không có thêm/xoá dòng: đủ 9 loại dữ liệu, cần khác thì kỹ sư sửa file.
+    // Không có thêm/xoá dòng: đủ 10 loại dữ liệu, cần khác thì kỹ sư sửa file.
     auto *hint = new QLabel(QStringLiteral("Đổi xong phải khởi động lại phần mềm."), linkBox);
     hint->setStyleSheet(QStringLiteral("color:#8a95a1;font-style:italic;"));
     linkBtns->addWidget(hint);
@@ -214,8 +299,8 @@ QWidget *EngineerWindow::buildConnectTab()
     linkBtns->addWidget(saveLinkBtn);
     linkLay->addLayout(linkBtns);
     // Hệ số giãn = số dòng muốn thấy trừ đi sàn một dòng của relaxTable(), nhờ
-    // vậy ở kích thước tự nhiên phần dư chia ra đúng 9 dòng và 8 dòng.
-    lay->addWidget(linkBox, 8);
+    // vậy ở kích thước tự nhiên phần dư chia ra đúng 10 dòng và 8 dòng.
+    lay->addWidget(linkBox, 9);
 
     // --- Group: danh sách các nút mạng
     auto *nodeBox = new QGroupBox(QStringLiteral("Danh sách các nút mạng"), page);
@@ -245,8 +330,8 @@ QWidget *EngineerWindow::buildConnectTab()
 
     fillLinkTable();
     fillNodeTable();
-    // Đủ 9 dòng cấu hình cổng (không cho thêm/xoá) và 8 dòng nút mạng.
-    fitTable(m_links, 9);
+    // Đủ 10 dòng cấu hình cổng (không cho thêm/xoá) và 8 dòng nút mạng.
+    fitTable(m_links, 10);
     fitTable(m_nodes, 8);
 
     connect(saveLinkBtn, &QPushButton::clicked, this, &EngineerWindow::saveLinks);

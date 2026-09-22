@@ -6,6 +6,7 @@
 
 #include <QApplication>
 #include <QFont>
+#include <QIcon>
 
 int main(int argc, char *argv[])
 {
@@ -16,6 +17,10 @@ int main(int argc, char *argv[])
 
     AppPaths::ensureWritableDirs();
     Settings::instance().load();
+
+    // Biểu tượng phần mềm nằm cạnh file chạy như các tài nguyên khác; Qt đọc
+    // được .ico nên không phải đổi sang .png.
+    QApplication::setWindowIcon(QIcon(AppPaths::resourceFile(QStringLiteral("RadarIcon.ico"))));
 
     // Đặt cỡ chữ trước khi nạp stylesheet: bảng kiểu tham chiếu cỡ chữ hiện hành.
     QFont f = QApplication::font();

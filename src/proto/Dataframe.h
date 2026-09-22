@@ -24,6 +24,23 @@ enum Category : quint32 {
     CatStatusMh    = 0x99910,  // trạng thái hệ thống MH
     CatVideoR      = 0x2011,   // đường quét RD
     CatVideoI      = 0x2012,   // đường quét MH + biên độ
+
+    // Mức kỹ sư: lệnh đi theo phân loại "Cmd-Admin", phản hồi về "Data-Status".
+    CatCmdAdmin          = 0x9002,
+    CatCmdAdminBack      = 0x90020,
+    CatCmdAdminAd        = 0x9003,
+    CatCmdAdminAdBack    = 0x90030,
+    CatCmdAdminSw        = 0x9004,
+    CatCmdAdminSwBack    = 0x90040,
+    CatCmdAdminOther     = 0x9005,
+    CatCmdAdminOtherBack = 0x90050,
+    CatCmdAdminCalibReg  = 0x9007,
+    CatCmdAdminCalibRegBack = 0x90070,
+    CatCmdAdminBuphabd   = 0x9008,
+    CatCmdAdminBuphabdBack = 0x90080,
+
+    CatStatusCalib  = 0x99920, // kết quả hiệu chuẩn, 3..5 gói/giây
+    CatStatusParams = 0x99930, // 100 tham số lưu trên hệ thống XL MH
 };
 
 struct Frame {

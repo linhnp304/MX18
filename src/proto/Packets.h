@@ -107,6 +107,160 @@ bool gpsFixGood(quint32 gpsStatus);
 
 } // namespace StatusMh
 
+// ------------------------------------------------- lệnh điều khiển mức kỹ sư
+
+namespace CmdAdmin {
+
+enum Field {
+    CuongdoVideo = 0,   // 0..31
+    DiemdauVideo,       // 0..315
+    KenhVideo,          // 0..3: SumF2 / SubF2 / SumF3 / SubF3
+    CuasoNguong,        // 0 tắt, 1 bật
+    Deltatx,            // bù K2 Sys-F4: raw = round(GUI * 1000)
+    Tx1Phase100, Tx1Phase50,
+    Tx1Amp100, Tx1Amp50,
+    Tx2Phase100, Tx2Phase50,
+    Tx2Amp100, Tx2Amp50,
+    DoCs,               // 0 tắt, 1 bật
+    ViewIq,             // 0..7
+    CalibOnoff,         // 0..8
+    // Năm trường bù pha/biên độ nằm trong gói nhưng điều khiển của chúng ở gói
+    // CMD_ADMIN_BUPHABD (tab "Other"); ở đây chỉ giữ chỗ cho đúng thứ tự byte.
+    CalibBuF2, CalibBuF4, CalibBuF2Amp, CalibBuF3Amp, CalibBuF4Amp,
+    AkTest,             // 0 tắt, 1 bật
+    AkGainKc, AkGainKp, AkGainKt,
+    DeltatxF2, DeltatxF3,   // raw = round(GUI * 1000)
+    Reserved1, Reserved2, Reserved3,
+    Count
+};
+
+const quint32 *defaults();
+
+} // namespace CmdAdmin
+
+namespace CmdAdminAd {
+
+enum Field {
+    Ftx = 0,            // MHz hoặc KHz tuỳ InputType
+    Frx,
+    GainRx1, GainRx2,   // 0..70
+    GainTx1, GainTx2,   // 0..85
+    InputType,          // 0 MHz, 1 KHz
+    Reserved1, Reserved2,
+    Count
+};
+
+const quint32 *defaults();
+
+// Bảng "Chọn tần số" của tab "AD": mỗi mục đặt sẵn một cặp tần số phát/thu.
+struct FreqPreset {
+    const char *name;
+    quint32 ftx;
+    quint32 frx;        // 0 = giữ nguyên giá trị đang có (mục "TLKT")
+};
+
+int freqPresetCount();
+const FreqPreset &freqPreset(int index);
+
+} // namespace CmdAdminAd
+
+namespace CmdAdminSw {
+
+enum Field {
+    VideoMulti = 0,     // 1..1000000
+    VideoDivi,          // 1..1000000
+    CxMin, CxMax,       // 2..200
+    CxBegin,            // 2..10
+    CxEnd,              // 2..100
+    EnaPlotDebug,       // 0..3
+    EnaVideoSrc,        // 0..4
+    EnaPlotSrc,         // 0,1
+    StTimer,            // 50..500
+    EnaPrintConsole,    // 0..8
+    IqSrc,              // dự phòng, gán 0
+    AutoBugps,          // 0,1
+    SvrDeltaRange, SvrDeltaBeta,   // dự phòng, gán 0
+    Reserved1,
+    Count
+};
+
+const quint32 *defaults();
+
+} // namespace CmdAdminSw
+
+namespace CmdAdminOther {
+
+enum Field {
+    BuGoc = 0,          // 0 tắt, 1 bù từ GPS, 2 bù bằng tay
+    GiatriBu,           // 0..4095: raw = round(GUI * 4096 / 360), 4096 quy về 0
+    PlotBuCly,          // 0..360000 mét
+    PlotBuPvi,          // raw = round(GUI * 100), có dấu
+    Locxung,            // 0..65535
+    LuuThamso,          // 0,1
+    CalibRM2,           // có dấu, mét
+    Reserved1, Reserved2, Reserved3, Reserved4, Reserved5,
+    Count
+};
+
+const quint32 *defaults();
+
+} // namespace CmdAdminOther
+
+namespace CmdAdminCalibReg {
+
+// Mỗi cặp (re, im) là một số phức: re = round(GUI * 32768), im tính theo radian
+// nên nhập bằng độ rồi đổi: im = round(GUI / 180 * PI * 32768).
+enum Field {
+    F21Re = 0, F21Im, F22Re, F22Im,
+    F31Re, F31Im, F32Re, F32Im,
+    F41Re, F41Im, F42Re, F42Im,
+    Reserved1, Reserved2, Reserved3, Reserved4, Reserved5,
+    Count
+};
+
+const quint32 *defaults();
+
+} // namespace CmdAdminCalibReg
+
+namespace CmdAdminBuphabd {
+
+enum Field {
+    BuF2 = 0, BuF3, BuF4,          // -359..359 độ, có dấu
+    BuF2Amp, BuF3Amp, BuF4Amp,     // 1..2000
+    Reserved1, Reserved2, Reserved3, Reserved4, Reserved5,
+    Count
+};
+
+const quint32 *defaults();
+
+} // namespace CmdAdminBuphabd
+
+namespace StatusCalib {
+
+// calib_read[6] rồi calib_feedback[28] rồi tx2_amp1, tx2_amp2 và 3 trường dự phòng.
+constexpr int kReadCount = 6;
+constexpr int kFeedbackCount = 28;
+
+enum Field {
+    Read0 = 0,
+    Feedback0 = kReadCount,
+    Tx2Amp1 = Feedback0 + kFeedbackCount,
+    Tx2Amp2,
+    Reserved1, Reserved2, Reserved3,
+    Count
+};
+
+} // namespace StatusCalib
+
+namespace StatusParams {
+
+constexpr int kCount = 100;
+
+// Tên tham số của xparams[i]; "NA" với các ô chưa dùng đến.
+const char *name(int index);
+
+} // namespace StatusParams
+
 // Đường quét: azimuth 0..4095 trên một vòng tròn.
 namespace Video {
 

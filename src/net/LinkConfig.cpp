@@ -24,11 +24,13 @@ struct DefaultRow {
     quint16 remotePort;
 };
 
-// Đúng 9 dòng trong docs/step-02.md; không cho thêm/xoá dòng trên giao diện.
+// 9 dòng của docs/step-02.md cộng thêm Data-RAW của giai đoạn 3; không cho
+// thêm/xoá dòng trên giao diện.
 const DefaultRow kDefaultRows[] = {
     {"Video-R",      LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26801, "0.0.0.0",         0},
     {"Video-I",      LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26802, "0.0.0.0",         0},
     {"Data-Status",  LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26800, "0.0.0.0",         0},
+    {"Data-RAW",     LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ServerOrUnicast,   "192.168.232.154", 24018, "0.0.0.0",         0},
     {"Cmd-User",     LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26810},
     {"Cmd-Admin",    LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26811},
     {"Cmd-RebootMH", LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26911},

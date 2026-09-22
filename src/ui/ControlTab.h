@@ -32,6 +32,11 @@ public:
     const quint32 *cmdAtFields() const { return m_at; }
     const quint32 *cmdUserFields() const { return m_user; }
 
+    // Trạng thái phản hồi của lệnh (category 0x90060 / 0x90010).
+    void applyCmdAtFeedback(const quint32 *fields);
+    void applyCmdUserFeedback(const quint32 *fields);
+    void clearFeedback();
+
 signals:
     void engineerRequested();
     void lockChanged(bool unlocked);
@@ -49,14 +54,33 @@ private:
     void buildService(QWidget *parent);
 
     // Nối một hàng điều khiển vào đúng trường của gói lệnh.
-    void bind(RadioRow *row, quint32 *slot, bool isAntenna);
-    void bind(SpinRow *row, quint32 *slot, bool isAntenna);
+    void bind(RadioRow *row, int field, bool isAntenna);
+    void bind(SpinRow *row, int field, bool isAntenna);
+
+    // Một hàng điều khiển gắn với một (hoặc hai) trường của gói lệnh; dùng để
+    // đối chiếu với gói phản hồi mà không phải viết lại từng hàng một.
+    struct Binding {
+        RadioRow *radio = nullptr;
+        SpinRow *spin = nullptr;
+        DualSpinRow *dual = nullptr;
+        int fieldA = -1;
+        int fieldB = -1;
+    };
+    void applyFeedback(bool isAntenna);
+    void refreshFeedback();
 
     void updateModeOptions();
     void updateGiaquayEnabled();
 
     quint32 m_at[CmdAt::Count];
     quint32 m_user[CmdUser::Count];
+    quint32 m_atBack[CmdAt::Count] = {0};
+    quint32 m_userBack[CmdUser::Count] = {0};
+    bool m_hasAtBack = false;
+    bool m_hasUserBack = false;
+
+    QVector<Binding> m_atBindings;
+    QVector<Binding> m_userBindings;
 
     QPushButton *m_lockBtn = nullptr;
     QPushButton *m_engineerBtn = nullptr;

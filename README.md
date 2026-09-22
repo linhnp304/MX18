@@ -33,6 +33,24 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
   biên độ của gói **VIDEO_I** vẽ đồng bộ theo đường quét MH và mờ dần theo thanh
   trượt "Tốc độ mờ video"; cùng dữ liệu đó hiện trên cửa sổ biên độ (panel 2.2).
 
+**Giai đoạn 3** — điều khiển và trạng thái mức kỹ sư:
+
+- Cửa sổ "Điều khiển và thiết lập mức kỹ sư" đủ sáu tab: **ADMIN / AD / SW /
+  Other / Params / Connect**, gửi các gói **CMD_ADMIN**, **CMD_ADMIN_AD**,
+  **CMD_ADMIN_SW**, **CMD_ADMIN_OTHER**, **CMD_ADMIN_CALIB_REG**,
+  **CMD_ADMIN_BUPHABD** và lệnh khởi động lại hệ thống XL MH.
+- Khác tab "Điều khiển" của panel 2, lệnh mức kỹ sư chỉ đi khi bấm nút
+  **"Gửi lệnh"**; cạnh nút là serial của gói vừa gửi, góc phải thanh tab là
+  serial của gói phản hồi.
+- Ô **"Khóa điều khiển"**: đang khoá thì mọi ô nhập bám theo trạng thái phản hồi
+  của hệ thống MH; mở khoá thì giữ giá trị kỹ sư đang đặt và đánh dấu **màu đỏ**
+  chỗ lệch so với phản hồi. Quy ước này áp dụng cho cả tab "Điều khiển" panel 2.
+- Bảng **"Kết quả hiệu chuẩn"** đổ dữ liệu gói **STATUS_CALIB**, bảng 100 tham số
+  của tab "Params" đổ dữ liệu gói **STATUS_PARAMS**.
+- Chọn chế độ hiệu chuẩn bên tab ADMIN tự nạp cặp tần số AD9361 tương ứng và gửi
+  **CMD_ADMIN_AD** trước **CMD_ADMIN** 100 ms.
+- Biểu tượng phần mềm lấy từ `resources/RadarIcon.ico`.
+
 ## Yêu cầu biên dịch
 
 | | Windows | Ubuntu |
@@ -91,7 +109,7 @@ cần cài thêm gì.
 ```
 MX18(.exe)
 ├── maps/mc/        dữ liệu bản đồ số (shapefile, Diadanh.txt, Airport2.dat)
-├── resources/      FlashScreen.jpg, logo.png
+├── resources/      FlashScreen.jpg, logo.png, RadarIcon.ico
 ├── settings/       swinfo.json, setups.json, checkip.json, connect.json,
 │                   setupadmin.json, statuserror.json, params.json
 ├── logs/           log và thông báo hệ thống
@@ -109,9 +127,9 @@ MX18(.exe)
 | `setups.json` | Toàn bộ lựa chọn trong tab "Cài đặt", bảng màu và toạ độ tâm đài |
 | `checkip.json` | Danh sách nút mạng cần ping: `name`, `address`, `kind` (0 không cảnh báo, 1 cảnh báo, 2 báo lỗi) |
 | `connect.json` | Bảng cổng gửi/nhận cho từng loại dữ liệu, và `big_endian` (thứ tự byte của gói tin) |
-| `setupadmin.json` | Thiết lập cửa sổ mức kỹ sư, kể cả mật khẩu (mặc định `X18`) |
+| `setupadmin.json` | Thiết lập cửa sổ mức kỹ sư: mật khẩu (mặc định `X18`) và trạng thái ô "Khóa điều khiển" |
 | `statuserror.json` | Ngưỡng báo lỗi của cửa sổ "Trạng thái MH": `Min50V`, `Max50V`, `Min5V`, `Max5V`, `MinCs`, `MaxT`, `MaxH` |
-| `params.json` | Tham số đài (tab "Params" của cửa sổ kỹ sư, giai đoạn sau) |
+| `params.json` | Tham số đài (để dành cho giai đoạn sau; bảng tham số của tab "Params" lấy trực tiếp từ gói `STATUS_PARAMS`) |
 
 Thiếu file nào thì phần mềm tự tạo file đó với giá trị mặc định. File **đã có mà
 đọc lỗi** (sai cú pháp json, hỏng file) thì phần mềm vẫn chạy bằng giá trị mặc

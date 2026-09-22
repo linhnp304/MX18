@@ -240,22 +240,33 @@ void LinkWorker::sendFrame(quint32 category, const QByteArray &data)
     frame.serial = ++m_serial;
     frame.time = Proto::msOfDay();
     frame.data = data;
-    const QByteArray raw = Proto::build(frame, m_bigEndian);
+    // Chỉ báo "gửi thành công" khi byte thật sự ra khỏi socket: nhãn serial
+    // trên cửa sổ kỹ sư dựa vào tín hiệu này.
+    if (writeOut(Proto::build(frame, m_bigEndian)))
+        emit frameSent(category, frame.serial);
+}
 
+void LinkWorker::sendRawBytes(const QByteArray &raw)
+{
+    writeOut(raw);
+}
+
+bool LinkWorker::writeOut(const QByteArray &raw)
+{
     if (m_entry.protocol == LinkEntry::Udp) {
         if (!m_udp)
-            return;
-        m_udp->writeDatagram(raw, m_remoteAddr, m_entry.remotePort);
-        return;
+            return false;
+        return m_udp->writeDatagram(raw, m_remoteAddr, m_entry.remotePort) == raw.size();
     }
-    if (m_client && m_client->state() == QAbstractSocket::ConnectedState) {
-        m_client->write(raw);
-        return;
-    }
+    if (m_client && m_client->state() == QAbstractSocket::ConnectedState)
+        return m_client->write(raw) == raw.size();
+
+    bool any = false;
     for (auto it = m_tcpBuffers.constBegin(); it != m_tcpBuffers.constEnd(); ++it) {
         if (it.key()->state() == QAbstractSocket::ConnectedState)
-            it.key()->write(raw);
+            any = (it.key()->write(raw) == raw.size()) || any;
     }
+    return any;
 }
 
 // ----------------------------------------------------------------- manager
@@ -285,6 +296,7 @@ void LinkManager::start()
         connect(thread, &QThread::started, worker, &LinkWorker::begin);
         connect(thread, &QThread::finished, worker, &QObject::deleteLater);
         connect(worker, &LinkWorker::frameReceived, this, &LinkManager::frameReceived);
+        connect(worker, &LinkWorker::frameSent, this, &LinkManager::frameSent);
         connect(worker, &LinkWorker::message, this, &LinkManager::message);
 
         m_threads.append(thread);
@@ -316,11 +328,22 @@ void LinkManager::stop()
     m_byCategory.clear();
 }
 
-void LinkManager::send(const QString &category, quint32 packetCategory, const QByteArray &data)
+bool LinkManager::send(const QString &category, quint32 packetCategory, const QByteArray &data)
 {
     LinkWorker *worker = m_byCategory.value(category);
     if (!worker)
-        return;
+        return false;
     QMetaObject::invokeMethod(worker, "sendFrame", Qt::QueuedConnection,
                               Q_ARG(quint32, packetCategory), Q_ARG(QByteArray, data));
+    return true;
+}
+
+bool LinkManager::sendRaw(const QString &category, const QByteArray &raw)
+{
+    LinkWorker *worker = m_byCategory.value(category);
+    if (!worker)
+        return false;
+    QMetaObject::invokeMethod(worker, "sendRawBytes", Qt::QueuedConnection,
+                              Q_ARG(QByteArray, raw));
+    return true;
 }

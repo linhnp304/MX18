@@ -31,10 +31,15 @@ public slots:
     void begin();
     void finish();
     void sendFrame(quint32 category, const QByteArray &data);
+    // Gửi nguyên xi một chuỗi byte, không đóng khung gói tin (lệnh khởi động
+    // lại hệ thống MH chỉ có 4 byte và không theo Dataframe).
+    void sendRawBytes(const QByteArray &raw);
 
 signals:
     // serial là trường của khung gói tin, cửa sổ "Trạng thái MH" hiển thị nó.
     void frameReceived(quint32 category, quint32 serial, const QByteArray &data);
+    // Gửi xong một gói lệnh: các tab mức kỹ sư hiện serial vừa gửi.
+    void frameSent(quint32 category, quint32 serial);
     void message(const QString &text, bool isError);
 
 private slots:
@@ -48,6 +53,8 @@ private:
     void openTcpServer();
     void openTcpClient();
     void handleRaw(const QByteArray &raw);
+    // false khi socket chưa mở hoặc chưa có đầu bên kia: lệnh không đi được.
+    bool writeOut(const QByteArray &raw);
     bool senderAllowed(const QHostAddress &addr, quint16 port) const;
     void dropTcpSocket(QTcpSocket *socket);
 
@@ -81,11 +88,15 @@ public:
     void start();
     void stop();
 
-    // Gửi một gói tin qua dòng cấu hình mang tên phân loại này.
-    void send(const QString &category, quint32 packetCategory, const QByteArray &data);
+    // Gửi một gói tin qua dòng cấu hình mang tên phân loại này. Trả về false
+    // khi chưa kết nối hoặc connect.json không có dòng nào mang tên đó — lớp
+    // gọi báo lại cho người dùng thay vì im lặng nuốt lệnh.
+    bool send(const QString &category, quint32 packetCategory, const QByteArray &data);
+    bool sendRaw(const QString &category, const QByteArray &raw);
 
 signals:
     void frameReceived(quint32 category, quint32 serial, const QByteArray &data);
+    void frameSent(quint32 category, quint32 serial);
     void message(const QString &text, bool isError);
 
 private:

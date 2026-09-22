@@ -49,6 +49,8 @@ private:
     void onFrame(quint32 category, quint32 serial, const QByteArray &data);
     void sendCmdAt();
     void sendCmdUser();
+    void sendAdminCommand(quint32 category, const QVector<quint32> &fields);
+    void sendRebootMh();
     void openEngineerWindow();
 
     void togglePopup(int id);
