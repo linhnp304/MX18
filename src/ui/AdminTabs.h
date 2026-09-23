@@ -91,6 +91,10 @@ class EngineerTab : public QWidget
 public:
     using QWidget::QWidget;
 
+    // Kích thước cần để hiện trọn nội dung tab (kể cả phần đang nằm trong vùng
+    // cuộn) — cửa sổ lấy số này của tab "ADMIN" làm kích thước mặc định.
+    QSize contentSizeHint() const;
+
     // Nhãn serial của gói phản hồi, hiện ở góc phải thanh tab.
     virtual QString cornerSerialText() const { return QString(); }
     virtual void setLocked(bool locked) { Q_UNUSED(locked); }

@@ -401,6 +401,11 @@ QWidget *FieldRow::addPlain(const QString &caption, QWidget *w)
     return w;
 }
 
+void FieldRow::addSpacing(int px)
+{
+    m_lay->insertSpacing(m_lay->count() - 1, px);
+}
+
 void FieldRow::addTail(QWidget *w)
 {
     m_lay->addWidget(w);

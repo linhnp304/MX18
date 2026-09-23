@@ -12,6 +12,7 @@
 #include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
@@ -55,8 +56,8 @@ QGroupBox *makeGroup(const QString &title, QWidget *parent)
 {
     auto *g = new QGroupBox(title, parent);
     auto *lay = new QVBoxLayout(g);
-    lay->setContentsMargins(10, 6, 10, 8);
-    lay->setSpacing(2);
+    lay->setContentsMargins(10, 4, 10, 6);
+    lay->setSpacing(1);
     return g;
 }
 
@@ -74,8 +75,9 @@ QWidget *scrollPage(QWidget *tab, QVBoxLayout **innerLayout)
 
     auto *page = new QWidget(scroll);
     auto *lay = new QVBoxLayout(page);
-    lay->setContentsMargins(8, 8, 8, 8);
-    lay->setSpacing(6);
+    // Lề hẹp để cả tab "ADMIN" — tab dài nhất — lọt trong một màn hình 1080p.
+    lay->setContentsMargins(6, 6, 6, 6);
+    lay->setSpacing(4);
 
     scroll->setWidget(page);
     outer->addWidget(scroll, 1);
@@ -205,6 +207,35 @@ void CommandBlock::refresh()
             b.editor->showFeedback(m_hasBack && back != m_fields.at(b.field), back);
         }
     }
+}
+
+// --------------------------------------------------------------- lớp chung
+
+// sizeHint() của tab chỉ tính đến sàn của QScrollArea nên bé hơn nội dung thật;
+// muốn cửa sổ mở ra vừa khít thì phải lấy kích thước mong muốn của trang nằm
+// trong vùng cuộn rồi cộng thêm các hàng đặt ngoài vùng cuộn.
+QSize EngineerTab::contentSizeHint() const
+{
+    auto *scroll = findChild<QScrollArea *>();
+    auto *lay = qobject_cast<QVBoxLayout *>(layout());
+    if (!scroll || !scroll->widget() || !lay)
+        return sizeHint();
+
+    QSize s = scroll->widget()->sizeHint();
+    s.rwidth() += 2 * scroll->frameWidth() + scroll->verticalScrollBar()->sizeHint().width();
+    s.rheight() += 2 * scroll->frameWidth();
+
+    for (int i = 0; i < lay->count(); ++i) {
+        QLayoutItem *item = lay->itemAt(i);
+        if (item->widget() == scroll)
+            continue;
+        s.rheight() += item->sizeHint().height() + lay->spacing();
+        s.rwidth() = qMax(s.width(), item->sizeHint().width());
+    }
+    const QMargins m = lay->contentsMargins();
+    s.rwidth() += m.left() + m.right();
+    s.rheight() += m.top() + m.bottom();
+    return s;
 }
 
 // ---------------------------------------------------------------- tab ADMIN
@@ -403,8 +434,8 @@ QGroupBox *AdminTab::buildCalibResultGroup()
 {
     auto *g = new QGroupBox(QStringLiteral("Kết quả hiệu chuẩn"), this);
     auto *lay = new QVBoxLayout(g);
-    lay->setContentsMargins(10, 6, 10, 8);
-    lay->setSpacing(4);
+    lay->setContentsMargins(10, 4, 10, 6);
+    lay->setSpacing(2);
 
     // Serial của STATUS_CALIB nằm sát bên phải nhóm.
     m_calibSerial = serialLabel(QStringLiteral("Phản hồi: "), g);
@@ -450,7 +481,7 @@ QGroupBox *AdminTab::buildCalibResultGroup()
         }
     }
 
-    const int rowHeight = qMax(22, fontMetrics().height() + 6);
+    const int rowHeight = qMax(21, fontMetrics().height() + 4);
     m_calibTable->verticalHeader()->setDefaultSectionSize(rowHeight);
     m_calibTable->setFixedHeight(m_calibTable->horizontalHeader()->sizeHint().height()
                                  + rowHeight * 8 + 2 * m_calibTable->frameWidth());
@@ -839,12 +870,12 @@ QGroupBox *OtherTab::buildCalibRegGroup()
     QVector<LabeledRow *> rows;
     for (const auto &r : kRows) {
         auto *row = new FieldRow(QString::fromUtf8(r.title), g);
-        // Bốn ô là hai số phức; không có nhãn thì không phân biệt nổi đâu là
-        // phần thực, đâu là pha.
-        m_calibReg->bind(row->add(QStringLiteral("Re:"), makeRe()), r.re1);
-        m_calibReg->bind(row->add(QStringLiteral("Pha:"), makeIm()), r.im1);
-        m_calibReg->bind(row->add(QStringLiteral("    Re:"), makeRe()), r.re2);
-        m_calibReg->bind(row->add(QStringLiteral("Pha:"), makeIm()), r.im2);
+        // Bốn ô là hai số phức: hai ô của mỗi số kề nhau, hai cụm cách nhau ra.
+        m_calibReg->bind(row->add(QString(), makeRe()), r.re1);
+        m_calibReg->bind(row->add(QString(), makeIm()), r.im1);
+        row->addSpacing(20);
+        m_calibReg->bind(row->add(QString(), makeRe()), r.re2);
+        m_calibReg->bind(row->add(QString(), makeIm()), r.im2);
         lay->addWidget(row);
         rows.append(row);
     }
@@ -921,13 +952,14 @@ void OtherTab::clearBack()
 ParamsTab::ParamsTab(QWidget *parent)
     : EngineerTab(parent)
 {
+    // Lề hẹp: bảng 100 dòng nên nhường hết chỗ cho số dòng nhìn thấy được.
     auto *lay = new QVBoxLayout(this);
-    lay->setContentsMargins(8, 8, 8, 8);
-    lay->setSpacing(6);
+    lay->setContentsMargins(6, 6, 6, 6);
+    lay->setSpacing(4);
 
     auto *box = new QGroupBox(QStringLiteral("Danh sách tham số lưu trên hệ thống XL MH"), this);
     auto *boxLay = new QVBoxLayout(box);
-    boxLay->setContentsMargins(8, 6, 8, 8);
+    boxLay->setContentsMargins(6, 4, 6, 6);
 
     m_table = new QTableWidget(StatusParams::kCount, 3, box);
     m_table->setHorizontalHeaderLabels({QStringLiteral("STT"), QStringLiteral("Tên tham số"),
@@ -943,7 +975,7 @@ ParamsTab::ParamsTab(QWidget *parent)
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
-    m_table->setColumnWidth(2, 130);
+    m_table->setColumnWidth(2, 110);
     m_table->verticalHeader()->setDefaultSectionSize(qMax(20, fontMetrics().height() + 4));
 
     for (int i = 0; i < StatusParams::kCount; ++i) {

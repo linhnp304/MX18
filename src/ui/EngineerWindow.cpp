@@ -16,6 +16,7 @@
 #include <QRegularExpressionValidator>
 #include <QScreen>
 #include <QScrollBar>
+#include <QTabBar>
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -109,7 +110,7 @@ EngineerWindow::EngineerWindow(QWidget *parent)
     m_tabs->addTab(m_otherTab, QStringLiteral("Other"));
     m_tabs->addTab(m_paramsTab, QStringLiteral("Params"));
     m_tabs->addTab(buildConnectTab(), QStringLiteral("Connect"));
-    m_tabs->setCurrentIndex(m_tabs->count() - 1);
+    m_tabs->setCurrentIndex(0);   // mở ra là thấy ngay tab "ADMIN"
 
     // Serial của gói phản hồi "sát bên phải tab": một nhãn chung ở góc thanh
     // tab, đổi nội dung theo tab đang xem.
@@ -152,23 +153,29 @@ EngineerWindow::EngineerWindow(QWidget *parent)
     for (EngineerTab *t : std::as_const(m_commandTabs))
         t->setLocked(m_lockBox->isChecked());
 
-    // Kích thước tự nhiên: chiều ngang vừa đúng bảng 8 cột của tab "Connect"
-    // (hẹp hơn là kỹ sư phải cuộn ngang mới thấy RemoteIP/RemotePort), chiều
-    // cao lấy đủ cho tab "ADMIN" — tab dài nhất — nhưng không quá màn hình.
-    int tableWidth = 2 * m_links->frameWidth()
-                     + m_links->verticalScrollBar()->sizeHint().width();
-    for (int c = 0; c < m_links->columnCount(); ++c)
-        tableWidth += m_links->columnWidth(c);
-
+    // Kích thước mặc định vừa khít tab "ADMIN" — tab dài và rộng nhất. Các tab
+    // còn lại ngắn hơn nên không phải cuộn; riêng tab "Connect" hẹp hơn bảng 8
+    // cột của nó nên bảng tự hiện thanh cuộn ngang.
     layout()->activate();
+    const QSize content = m_adminTab->contentSizeHint();
+    const QMargins m = lay->contentsMargins();
+    // Khung của QTabWidget: viền 1 px mỗi bên (xem bảng kiểu trong Theme).
+    constexpr int kPaneFrame = 2;
+    const int width = content.width() + m.left() + m.right() + 2 * kPaneFrame;
+    const int height = content.height() + m_tabs->tabBar()->sizeHint().height()
+                       + 2 * kPaneFrame + m.top() + m.bottom()
+                       + lay->spacing() + bottom->sizeHint().height();
+
+    // Trừ thêm ~48 px cho thanh tiêu đề của cửa sổ: availableGeometry() đã trừ
+    // thanh trên cùng của hệ điều hành nhưng không trừ phần trang trí cửa sổ.
     const QRect avail = screen() ? screen()->availableGeometry() : QRect(0, 0, 1280, 1024);
-    const QSize natural(qBound(560, tableWidth + 44, 1100),
-                        qMin(qMax(sizeHint().height(), 940), int(avail.height() * 0.92)));
+    const QSize natural(qMin(width, avail.width()),
+                        qMin(height, avail.height() - 48));
     resize(natural);
 
-    // Lấy xong kích thước tự nhiên thì hạ sàn của hai bảng xuống còn 3 dòng và
-    // đặt sàn của cửa sổ đúng một nửa: anh Linh muốn kéo thu nhỏ được tối đa
-    // 50% cả hai chiều, lúc đó hai bảng tự hiện thanh cuộn.
+    // Lấy xong kích thước mặc định thì hạ sàn của hai bảng tab "Connect" xuống
+    // còn một dòng và đặt sàn của cửa sổ đúng một nửa: anh Linh muốn kéo thu
+    // nhỏ được tối đa 50% cả hai chiều, lúc đó các bảng tự hiện thanh cuộn.
     relaxTable(m_links);
     relaxTable(m_nodes);
     setMinimumSize(natural.width() / 2, natural.height() / 2);

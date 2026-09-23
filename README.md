@@ -49,6 +49,7 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
   của tab "Params" đổ dữ liệu gói **STATUS_PARAMS**.
 - Chọn chế độ hiệu chuẩn bên tab ADMIN tự nạp cặp tần số AD9361 tương ứng và gửi
   **CMD_ADMIN_AD** trước **CMD_ADMIN** 100 ms.
+- Cửa sổ kỹ sư mở ra ở tab "ADMIN" với kích thước vừa khít nội dung tab đó.
 - Biểu tượng phần mềm lấy từ `resources/RadarIcon.ico`.
 
 ## Yêu cầu biên dịch

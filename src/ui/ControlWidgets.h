@@ -180,6 +180,8 @@ public:
     FieldEditor *add(const QString &caption, FieldEditor *editor);
     // Widget không gắn với trường nào (ComboBox "Chọn tần số", nút bấm…).
     QWidget *addPlain(const QString &caption, QWidget *w);
+    // Khoảng hở cố định giữa hai cụm ô nhập trong cùng một hàng.
+    void addSpacing(int px);
     void addTail(QWidget *w);          // nhãn đi kèm sát mép phải hàng
 
 signals:
