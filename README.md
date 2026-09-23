@@ -143,7 +143,7 @@ MX18(.exe)
 | `setups.json` | Toàn bộ lựa chọn trong tab "Cài đặt", bảng màu và toạ độ tâm đài |
 | `checkip.json` | Danh sách nút mạng cần ping: `name`, `address`, `kind` (0 không cảnh báo, 1 cảnh báo, 2 báo lỗi) |
 | `connect.json` | Bảng cổng gửi/nhận cho từng loại dữ liệu, và `big_endian` (thứ tự byte của gói tin) |
-| `setupadmin.json` | Thiết lập cửa sổ mức kỹ sư: mật khẩu (mặc định `X18`) và trạng thái ô "Khóa điều khiển" |
+| `setupadmin.json` | Thiết lập cửa sổ mức kỹ sư: mật khẩu (mặc định `X18`). Ô "Khóa điều khiển" không lưu — mỗi lần mở cửa sổ đều khoá sẵn |
 | `statuserror.json` | Ngưỡng báo lỗi của cửa sổ "Trạng thái MH": `Min50V`, `Max50V`, `Min5V`, `Max5V`, `MinCs`, `MaxT`, `MaxH` |
 | `params.json` | Tham số đài (để dành cho giai đoạn sau; bảng tham số của tab "Params" lấy trực tiếp từ gói `STATUS_PARAMS`) |
 

@@ -16,6 +16,7 @@
 #include <QRegularExpressionValidator>
 #include <QScreen>
 #include <QScrollBar>
+#include <QShowEvent>
 #include <QTabBar>
 #include <QSpinBox>
 #include <QTabWidget>
@@ -138,7 +139,7 @@ EngineerWindow::EngineerWindow(QWidget *parent)
     // Ô khoá ở góc dưới bên trái theo đặc tả.
     auto *bottom = new QHBoxLayout;
     m_lockBox = new QCheckBox(QStringLiteral("Khóa điều khiển"), this);
-    m_lockBox->setChecked(Settings::instance().adminLocked());
+    m_lockBox->setChecked(true);
     bottom->addWidget(m_lockBox);
     bottom->addStretch(1);
     auto *closeBtn = new QPushButton(QStringLiteral("Đóng"), this);
@@ -147,7 +148,6 @@ EngineerWindow::EngineerWindow(QWidget *parent)
 
     connect(closeBtn, &QPushButton::clicked, this, &QWidget::close);
     connect(m_lockBox, &QCheckBox::toggled, this, [this](bool locked) {
-        Settings::instance().setAdminLocked(locked);
         for (EngineerTab *t : std::as_const(m_commandTabs))
             t->setLocked(locked);
     });
@@ -264,6 +264,16 @@ void EngineerWindow::clearBack()
 void EngineerWindow::setLocked(bool locked)
 {
     m_lockBox->setChecked(locked);
+}
+
+void EngineerWindow::showEvent(QShowEvent *event)
+{
+    // Anh Linh chốt 2026-09-24: mỗi lần mở cửa sổ đều khoá sẵn, kỹ sư phải chủ
+    // động bỏ khoá mới sửa được lệnh — tránh lần mở sau vô tình còn ở trạng thái
+    // mở khoá của lần trước. Hiện lại sau khi thu nhỏ (spontaneous) thì giữ nguyên.
+    if (!event->spontaneous())
+        m_lockBox->setChecked(true);
+    QWidget::showEvent(event);
 }
 
 void EngineerWindow::updateCornerSerial()

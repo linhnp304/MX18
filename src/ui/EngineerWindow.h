@@ -25,7 +25,8 @@ class QTabWidget;
 //
 // Ô "Khóa điều khiển" ở góc dưới bên trái khoá cả năm tab lệnh cùng lúc; lúc
 // khoá thì các ô nhập bám theo trạng thái phản hồi của hệ thống MH, lúc mở khoá
-// thì giữ giá trị kỹ sư đang đặt và đánh dấu đỏ chỗ lệch.
+// thì giữ giá trị kỹ sư đang đặt và đánh dấu đỏ chỗ lệch. Mỗi lần mở cửa sổ ô
+// này đều bắt đầu ở trạng thái khoá.
 class EngineerWindow : public QWidget
 {
     Q_OBJECT
@@ -51,6 +52,9 @@ signals:
     void commandReady(quint32 category, const QVector<quint32> &fields);
     void rebootRequested();
     void viewIqRequested();
+
+protected:
+    void showEvent(QShowEvent *event) override;
 
 private:
     QWidget *buildConnectTab();

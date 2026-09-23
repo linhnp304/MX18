@@ -90,10 +90,6 @@ public:
 
     QString engineerPassword() const { return m_engineerPassword; }
 
-    // Ô "Khóa điều khiển" ở góc dưới cửa sổ mức kỹ sư.
-    bool adminLocked() const { return m_adminLocked; }
-    void setAdminLocked(bool locked);
-
     void saveSetups();
     void saveSwInfo();
     void saveSetupAdmin();
@@ -126,6 +122,5 @@ private:
     StatusLimits m_limits;
     QVector<NetNode> m_netNodes;
     QString m_engineerPassword = QStringLiteral("X18");
-    bool m_adminLocked = true;
     QStringList m_loadErrors;
 };

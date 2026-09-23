@@ -199,7 +199,6 @@ void Settings::loadSetupAdmin()
     const QJsonObject o = readChecked(path);
     m_engineerPassword = JsonFile::str(o, QStringLiteral("engineer_password"),
                                        QStringLiteral("X18"));
-    m_adminLocked = JsonFile::b(o, QStringLiteral("admin_locked"), true);
     if (!QFile::exists(path))
         saveSetupAdmin();
 }
@@ -210,16 +209,9 @@ void Settings::saveSetupAdmin()
     // kỹ sư sẽ thêm khoá riêng ở giai đoạn sau, đừng xoá mất của nhau.
     QJsonObject o = JsonFile::read(AppPaths::settingsFile(QStringLiteral("setupadmin.json")));
     o[QStringLiteral("engineer_password")] = m_engineerPassword;
-    o[QStringLiteral("admin_locked")] = m_adminLocked;
+    // Ô "Khóa điều khiển" không còn lưu: mỗi lần mở cửa sổ kỹ sư đều khoá sẵn.
+    o.remove(QStringLiteral("admin_locked"));
     JsonFile::write(AppPaths::settingsFile(QStringLiteral("setupadmin.json")), o);
-}
-
-void Settings::setAdminLocked(bool locked)
-{
-    if (m_adminLocked == locked)
-        return;
-    m_adminLocked = locked;
-    saveSetupAdmin();
 }
 
 // ---------------------------------------------------------- statuserror.json

@@ -488,7 +488,6 @@ void MainWindow::sendRebootMh()
         return;
     }
     // Khoá điều khiển lại để chờ hệ thống MH khởi động xong.
-    Settings::instance().setAdminLocked(true);
     m_engineerWindow->setLocked(true);
     notify(QStringLiteral("Đã gửi lệnh khởi động lại hệ thống XL MH, điều khiển mức kỹ sư "
                           "tự khóa lại."));
