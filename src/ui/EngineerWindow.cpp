@@ -130,6 +130,7 @@ EngineerWindow::EngineerWindow(QWidget *parent)
     connect(m_adminTab, &AdminTab::calibPresetRequested, m_adTab, &AdTab::selectPreset);
 
     connect(m_otherTab, &OtherTab::rebootRequested, this, &EngineerWindow::rebootRequested);
+    connect(m_adminTab, &AdminTab::viewIqRequested, this, &EngineerWindow::viewIqRequested);
 
     lay->addWidget(m_tabs, 1);
     updateCornerSerial();

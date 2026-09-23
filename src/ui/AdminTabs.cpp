@@ -409,6 +409,7 @@ QGroupBox *AdminTab::buildCalibGroup()
                               CmdAdmin::Deltatx);
 
     m_viewIqBtn = new QPushButton(QStringLiteral("ViewIQ - Vẽ cánh sóng"), g);
+    connect(m_viewIqBtn, &QPushButton::clicked, this, &AdminTab::viewIqRequested);
     auto *btnRow = new QHBoxLayout;
     btnRow->addWidget(m_viewIqBtn);
     btnRow->addStretch(1);

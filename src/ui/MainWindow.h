@@ -7,6 +7,8 @@
 #include <QMainWindow>
 #include <QVector>
 
+#include <memory>
+
 class ColorSetupDialog;
 class ControlPanel;
 class EngineerWindow;
@@ -17,6 +19,8 @@ class NetworkPopup;
 class NotifyPopup;
 class PingService;
 class RadarCenterPopup;
+class RawIqStore;
+class ViewIqWindow;
 class SlidePopup;
 class QSplitter;
 class QTimer;
@@ -52,6 +56,7 @@ private:
     void sendAdminCommand(quint32 category, const QVector<quint32> &fields);
     void sendRebootMh();
     void openEngineerWindow();
+    void openViewIqWindow();
 
     void togglePopup(int id);
     void openPopup(int id);
@@ -77,12 +82,17 @@ private:
 
     ColorSetupDialog *m_colorDialog = nullptr;
     EngineerWindow *m_engineerWindow = nullptr;
+    // Tạo khi mở lần đầu: phần lớn phiên làm việc không ai vẽ cánh sóng.
+    ViewIqWindow *m_viewIqWindow = nullptr;
 
     PingService *m_ping = nullptr;
 
     LinkConfig m_linkConfig;
     QString m_linkConfigError;
     LinkManager *m_links = nullptr;
+    // Dùng chung giữa luồng nhận "Data-RAW" và cửa sổ ViewIQ; shared_ptr để
+    // luồng nhận không bao giờ giữ con trỏ treo dù thứ tự huỷ thế nào.
+    std::shared_ptr<RawIqStore> m_rawIq;
 
     // Góc quét đến 400 lần/giây cho mỗi loại; thanh trạng thái chỉ cần 10 lần.
     QTimer *m_angleTimer = nullptr;

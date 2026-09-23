@@ -16,6 +16,13 @@ namespace {
 // Thời gian thử nối lại khi TCP Client mất kết nối.
 constexpr int kRetryMs = 3000;
 
+// Bộ đệm nhận của hệ điều hành cho cổng gói thô: ~200 gói RAW_IQ, đủ đỡ một
+// nhịp luồng nhận bị hệ điều hành cho nghỉ lâu. Linux tự kẹp về rmem_max.
+constexpr int kRawRecvBuffer = 4 * 1024 * 1024;
+// Datagram UDP dài nhất có thể có; đọc thẳng vào bộ đệm cỡ này nên không bao
+// giờ phải cấp phát lại.
+constexpr int kMaxDatagram = 65536;
+
 QString describe(const LinkEntry &e)
 {
     static const char *const kDir[] = {"Recv", "Send", "Send/Recv"};
@@ -33,9 +40,10 @@ QString describe(const LinkEntry &e)
 
 // ------------------------------------------------------------------ worker
 
-LinkWorker::LinkWorker(const LinkEntry &entry, bool bigEndian)
+LinkWorker::LinkWorker(const LinkEntry &entry, bool bigEndian, std::shared_ptr<RawSink> rawSink)
     : m_entry(entry)
     , m_bigEndian(bigEndian)
+    , m_rawSink(std::move(rawSink))
 {
     m_remoteAddr = QHostAddress(m_entry.remoteIp);
     m_localAddr = QHostAddress(m_entry.localIp);
@@ -119,6 +127,10 @@ void LinkWorker::openUdp()
                          .arg(m_entry.category, m_entry.localIp), false);
     }
 
+    if (m_rawSink) {
+        m_udp->setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption, kRawRecvBuffer);
+        m_rawBuffer.resize(kMaxDatagram);
+    }
     connect(m_udp, &QUdpSocket::readyRead, this, &LinkWorker::readUdp);
 }
 
@@ -196,11 +208,43 @@ bool LinkWorker::senderAllowed(const QHostAddress &addr, quint16 port) const
 void LinkWorker::readUdp()
 {
     while (m_udp && m_udp->hasPendingDatagrams()) {
+        if (m_rawSink) {
+            if (!readRawDatagram())
+                break;
+            continue;
+        }
         const QNetworkDatagram dg = m_udp->receiveDatagram();
         if (!senderAllowed(dg.senderAddress(), quint16(dg.senderPort())))
             continue;
         handleRaw(dg.data());
     }
+}
+
+bool LinkWorker::readRawDatagram()
+{
+    // Đọc thẳng vào bộ đệm dựng sẵn thay vì receiveDatagram(): 400 gói/giây
+    // mà gói nào cũng cấp phát một QByteArray 19 KB thì chỉ tổ phân mảnh heap.
+    QHostAddress addr;
+    quint16 port = 0;
+    const qint64 n = m_udp->readDatagram(m_rawBuffer.data(), m_rawBuffer.size(), &addr, &port);
+    if (n < 0)
+        return false;
+    if (senderAllowed(addr, port)) {
+        checkRawSize(n);
+        m_rawSink->feed(m_rawBuffer.constData(), int(n), m_bigEndian);
+    }
+    return true;
+}
+
+void LinkWorker::checkRawSize(qint64 size)
+{
+    if (m_rawSizeWarned || size == m_rawSink->frameBytes())
+        return;
+    // Báo một lần mỗi lần kết nối là đủ: gói lệch cỡ thường do cấu hình sai
+    // phía hệ thống MH, lặp lại 400 lần/giây chỉ làm ngập bảng thông báo.
+    m_rawSizeWarned = true;
+    emit message(QStringLiteral("%1: nhận gói %2 byte, đặc tả là %3 byte.")
+                     .arg(m_entry.category).arg(size).arg(m_rawSink->frameBytes()), true);
 }
 
 void LinkWorker::readTcp()
@@ -210,6 +254,18 @@ void LinkWorker::readTcp()
         return;
     QByteArray &buf = m_tcpBuffers[socket];
     buf.append(socket->readAll());
+
+    if (m_rawSink) {
+        // Gói thô không có header để dò đồng bộ, chỉ cắt đúng cỡ liên tiếp.
+        const int n = m_rawSink->frameBytes();
+        int offset = 0;
+        while (buf.size() - offset >= n) {
+            m_rawSink->feed(buf.constData() + offset, n, m_bigEndian);
+            offset += n;
+        }
+        buf.remove(0, offset);
+        return;
+    }
 
     // TCP là dòng byte liên tục nên phải tự cắt gói theo trường length.
     while (buf.size() >= 12) {
@@ -290,7 +346,7 @@ void LinkManager::start()
         auto *thread = new QThread(this);
         thread->setObjectName(QStringLiteral("link-%1").arg(entry.category));
 
-        auto *worker = new LinkWorker(entry, m_config.bigEndian);
+        auto *worker = new LinkWorker(entry, m_config.bigEndian, m_rawSinks.value(entry.category));
         worker->moveToThread(thread);
 
         connect(thread, &QThread::started, worker, &LinkWorker::begin);
@@ -336,6 +392,11 @@ bool LinkManager::send(const QString &category, quint32 packetCategory, const QB
     QMetaObject::invokeMethod(worker, "sendFrame", Qt::QueuedConnection,
                               Q_ARG(quint32, packetCategory), Q_ARG(QByteArray, data));
     return true;
+}
+
+void LinkManager::setRawSink(const QString &category, std::shared_ptr<RawSink> sink)
+{
+    m_rawSinks.insert(category, std::move(sink));
 }
 
 bool LinkManager::sendRaw(const QString &category, const QByteArray &raw)

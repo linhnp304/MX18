@@ -126,6 +126,8 @@ signals:
     // calib_onoff vừa đổi so với lệnh gửi trước đó: tab "AD" nhảy sang đúng
     // mục "Chọn tần số" tương ứng.
     void calibPresetRequested(int presetIndex);
+    // Nút "ViewIQ - Vẽ cánh sóng".
+    void viewIqRequested();
 
 private:
     QGroupBox *buildVideoGroup();

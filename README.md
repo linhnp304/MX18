@@ -52,6 +52,21 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
 - Cửa sổ kỹ sư mở ra ở tab "ADMIN" với kích thước vừa khít nội dung tab đó.
 - Biểu tượng phần mềm lấy từ `resources/RadarIcon.ico`.
 
+**Giai đoạn 4** — vẽ cánh sóng:
+
+- Nút **"ViewIQ - Vẽ cánh sóng"** trên tab ADMIN mở cửa sổ cùng tên (800x600,
+  thu nhỏ được còn một nửa). Cửa sổ nổi nhưng không chặn: vẫn điều khiển được
+  giao diện chính và cửa sổ kỹ sư trong lúc đang vẽ.
+- Dữ liệu là gói **RAW_IQ** (4805 word, không có khung Dataframe) nhận qua dòng
+  `Data-RAW` của `connect.json`, 250..400 gói/giây.
+- **ViewIQ** (IQType 4..7): 600 điểm IQ1 / IQ2 từ StartWord.
+  **Vẽ CS** (IQType 2, 3): trung bình cộng Sum / Sub trên MeanWords word, vẽ
+  theo phương vị trên đồ thị cực và đồ thị 0..360°, đơn vị dB hoặc biên độ.
+  Đang chạy thì DataType tự chuyển theo IQType của gói; giá trị nhiễu
+  `0x5a5a` / `0xa5a5` bị loại khỏi phép tính.
+- Bỏ chọn **Start/Stop** là đứng hình để soi số liệu: di chuột trên đồ thị hiện
+  giá trị hai đường tại điểm đó.
+
 ## Yêu cầu biên dịch
 
 | | Windows | Ubuntu |
@@ -159,3 +174,8 @@ phải chạy lại phần mềm.
   thẳng cho mỗi tia — vào một lớp ARGB riêng; lớp này mờ dần bằng phép **trừ**
   alpha (không phải nhân, vì phép nhân số nguyên đứng lại ở mức alpha thấp và để
   lại vệt xanh không bao giờ tắt) và được ghép lên nền bản đồ ở nhịp 25 hình/giây.
+- **RAW_IQ**: mỗi gói 19 KB, đến 400 gói/giây. Gói được tính ngay trên luồng
+  nhận của cổng `Data-RAW` rồi chỉ giữ phần cần vẽ (ViewIQ: gói mới nhất; Vẽ CS:
+  một cặp Sum/Sub cho mỗi phương vị encoder); cửa sổ lấy bản chụp ở nhịp 25
+  hình/giây. Giao diện vẽ không kịp thì gói bị gói sau đè lên chứ bộ nhớ không
+  phình ra. Thứ tự byte theo khoá `big_endian` chung.

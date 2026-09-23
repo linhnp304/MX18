@@ -48,11 +48,15 @@ set(MX18_SOURCES
     src/net/LinkConfig.h
     src/net/DataLink.cpp
     src/net/DataLink.h
+    src/net/RawIqStore.cpp
+    src/net/RawIqStore.h
 
     src/proto/Dataframe.cpp
     src/proto/Dataframe.h
     src/proto/Packets.cpp
     src/proto/Packets.h
+    src/proto/RawIq.cpp
+    src/proto/RawIq.h
 
     src/ui/Theme.cpp
     src/ui/Theme.h
@@ -78,6 +82,12 @@ set(MX18_SOURCES
     src/ui/MhStatusPopup.h
     src/ui/EngineerWindow.cpp
     src/ui/EngineerWindow.h
+    src/ui/FlowLayout.cpp
+    src/ui/FlowLayout.h
+    src/ui/IqPlots.cpp
+    src/ui/IqPlots.h
+    src/ui/ViewIqWindow.cpp
+    src/ui/ViewIqWindow.h
     src/ui/StatusPanel.cpp
     src/ui/StatusPanel.h
     src/ui/SlidePopup.cpp

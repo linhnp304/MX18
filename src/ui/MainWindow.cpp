@@ -4,6 +4,7 @@
 #include "core/Settings.h"
 #include "net/DataLink.h"
 #include "net/PingService.h"
+#include "net/RawIqStore.h"
 #include "proto/Dataframe.h"
 #include "proto/Packets.h"
 #include "ui/AmplitudeView.h"
@@ -16,6 +17,7 @@
 #include "ui/SettingsTab.h"
 #include "ui/SetupDialogs.h"
 #include "ui/Theme.h"
+#include "ui/ViewIqWindow.h"
 
 #include <QKeyEvent>
 #include <QVector>
@@ -118,6 +120,10 @@ void MainWindow::buildUi()
 
     m_links = new LinkManager(this);
     m_links->setConfig(m_linkConfig);
+    // RAW_IQ không theo Dataframe: gói trên dòng "Data-RAW" được tính ngay trên
+    // luồng nhận thay vì mở khung rồi đẩy về luồng giao diện.
+    m_rawIq = std::make_shared<RawIqStore>();
+    m_links->setRawSink(QStringLiteral("Data-RAW"), m_rawIq);
 
     m_angleTimer = new QTimer(this);
     m_angleTimer->setInterval(100);
@@ -169,6 +175,7 @@ void MainWindow::wireSignals()
             [this](const QString &message) { notify(message); });
     connect(m_engineerWindow, &EngineerWindow::commandReady, this, &MainWindow::sendAdminCommand);
     connect(m_engineerWindow, &EngineerWindow::rebootRequested, this, &MainWindow::sendRebootMh);
+    connect(m_engineerWindow, &EngineerWindow::viewIqRequested, this, &MainWindow::openViewIqWindow);
 
     connect(m_links, &LinkManager::frameSent, this,
             [this](quint32 category, quint32 serial) {
@@ -500,6 +507,17 @@ void MainWindow::openEngineerWindow()
     m_engineerWindow->show();
     m_engineerWindow->raise();
     m_engineerWindow->activateWindow();
+}
+
+void MainWindow::openViewIqWindow()
+{
+    // Cha là cửa sổ chính chứ không phải cửa sổ kỹ sư: hai cửa sổ ngang hàng,
+    // đóng cửa sổ kỹ sư thì vẫn vẽ cánh sóng tiếp được.
+    if (!m_viewIqWindow)
+        m_viewIqWindow = new ViewIqWindow(m_rawIq, this);
+    m_viewIqWindow->show();
+    m_viewIqWindow->raise();
+    m_viewIqWindow->activateWindow();
 }
 
 // ------------------------------------------------------------- kết nối

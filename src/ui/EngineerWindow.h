@@ -50,6 +50,7 @@ signals:
     // Lớp trên đóng gói theo thứ tự byte của connect.json rồi gửi qua Cmd-Admin.
     void commandReady(quint32 category, const QVector<quint32> &fields);
     void rebootRequested();
+    void viewIqRequested();
 
 private:
     QWidget *buildConnectTab();
