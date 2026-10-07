@@ -1,6 +1,7 @@
 #pragma once
 
 #include "net/LinkConfig.h"
+#include "proto/Asterix.h"
 #include "proto/ScnCf.h"
 #include "proto/ScnText.h"
 
@@ -70,6 +71,9 @@ signals:
     void frameReceived(quint32 category, quint32 serial, const QByteArray &data, bool bigEndian);
     void scnStatus(const ScnText::Status &status);
     void scnCfReceived(const ScnCf::Message &message);
+    // Một datagram ASTERIX đã mở (X18-VQ): vài chục bản ghi mỗi vòng quét nên
+    // gom cả datagram một lần qua hàng đợi tín hiệu.
+    void asterixReceived(const Asterix::Batch &batch);
     // Gửi xong một gói lệnh: các tab mức kỹ sư hiện serial vừa gửi.
     void frameSent(quint32 category, quint32 serial);
     void message(const QString &text, bool isError);
@@ -152,6 +156,7 @@ signals:
     void message(const QString &text, bool isError);
     void scnStatus(const ScnText::Status &status);
     void scnCfReceived(const ScnCf::Message &message);
+    void asterixReceived(const Asterix::Batch &batch);
 
 private:
     LinkConfig m_config;

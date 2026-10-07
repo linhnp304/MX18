@@ -6,6 +6,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPropertyAnimation>
+#include <QResizeEvent>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -65,6 +66,23 @@ void SlidePopup::openAt(const QPoint &targetTopLeft)
     m_anim->setEndValue(m_target);
     m_anim->disconnect(this);
     m_anim->start();
+}
+
+void SlidePopup::resizeEvent(QResizeEvent *event)
+{
+    QFrame::resizeEvent(event);
+    // Popup neo mép dưới vào thanh trạng thái: nội dung dài thêm lúc đang mở
+    // (trạng thái SCN, trạng thái MH) thì dời lên chứ đừng tràn xuống dưới.
+    if (!m_open || !isVisible() || !event->oldSize().isValid())
+        return;
+    const int dy = event->size().height() - event->oldSize().height();
+    if (dy == 0)
+        return;
+    m_target.ry() -= dy;
+    if (m_anim->state() == QAbstractAnimation::Running)
+        m_anim->setEndValue(m_target);
+    else
+        move(x(), y() - dy);
 }
 
 void SlidePopup::closePopup()

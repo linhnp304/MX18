@@ -96,6 +96,7 @@ void Settings::loadSetups()
     m_setups.rangeRingMode    = qBound(0, JsonFile::i(o, QStringLiteral("range_ring_mode"), d.rangeRingMode), 3);
     m_setups.azimuthMode      = qBound(0, JsonFile::i(o, QStringLiteral("azimuth_mode"), d.azimuthMode), 3);
     m_setups.plotHoldSec      = qBound(1, JsonFile::i(o, QStringLiteral("plot_hold_sec"), d.plotHoldSec), 600);
+    m_setups.trackDropSec     = qBound(10, JsonFile::i(o, QStringLiteral("track_drop_sec"), d.trackDropSec), 600);
     m_setups.trackSizePct     = JsonFile::i(o, QStringLiteral("track_size_pct"), d.trackSizePct);
     m_setups.plotSizePct      = JsonFile::i(o, QStringLiteral("plot_size_pct"), d.plotSizePct);
     m_setups.radarLat         = JsonFile::num(o, QStringLiteral("radar_lat"), d.radarLat);
@@ -126,6 +127,7 @@ void Settings::saveSetups()
     o[QStringLiteral("range_ring_mode")]    = m_setups.rangeRingMode;
     o[QStringLiteral("azimuth_mode")]       = m_setups.azimuthMode;
     o[QStringLiteral("plot_hold_sec")]      = m_setups.plotHoldSec;
+    o[QStringLiteral("track_drop_sec")]     = m_setups.trackDropSec;
     o[QStringLiteral("track_size_pct")]     = m_setups.trackSizePct;
     o[QStringLiteral("plot_size_pct")]      = m_setups.plotSizePct;
     o[QStringLiteral("radar_lat")]          = m_setups.radarLat;
@@ -193,13 +195,55 @@ void Settings::saveNetNodes()
 
 // ----------------------------------------------------------- setupadmin.json
 
+namespace {
+
+// Khoá giai đoạn 6 của setupadmin.json, theo thứ tự ghi ra file.
+const char *const kAdminKeys[] = {
+    "vq_range_change", "vq_output_p18m", "vq_sac", "vq_sic", "vq_sector_source",
+    "vq_send_tre", "vq_site_height_m",
+    "mh_init_scans", "mh_speed_min_mps", "mh_speed_max_mps", "mh_extrapolate_scans",
+    "mh_scan_period_s", "mh_window_azimuth_deg", "mh_window_range_km", "mh_track_id_start",
+};
+
+} // namespace
+
 void Settings::loadSetupAdmin()
 {
     const QString path = AppPaths::settingsFile(QStringLiteral("setupadmin.json"));
     const QJsonObject o = readChecked(path);
     m_engineerPassword = JsonFile::str(o, QStringLiteral("engineer_password"),
                                        QStringLiteral("X18"));
-    if (!QFile::exists(path))
+
+    const VqSetup dv;
+    m_vq.rangeChange = qBound(0.1, JsonFile::num(o, QStringLiteral("vq_range_change"), dv.rangeChange), 10.0);
+    m_vq.outputP18m  = JsonFile::b(o, QStringLiteral("vq_output_p18m"), dv.outputP18m);
+    m_vq.sac         = qBound(0, JsonFile::i(o, QStringLiteral("vq_sac"), dv.sac), 255);
+    m_vq.sic         = qBound(0, JsonFile::i(o, QStringLiteral("vq_sic"), dv.sic), 255);
+    const QString source = JsonFile::str(o, QStringLiteral("vq_sector_source"), QStringLiteral("VIDEO_R"));
+    m_vq.sectorFromVideoI = source.compare(QStringLiteral("VIDEO_I"), Qt::CaseInsensitive) == 0;
+    if (!m_vq.sectorFromVideoI && source.compare(QStringLiteral("VIDEO_R"), Qt::CaseInsensitive) != 0) {
+        m_loadErrors.append(QStringLiteral("setupadmin.json: vq_sector_source \"%1\" không hợp lệ "
+                                           "(VIDEO_R hoặc VIDEO_I), dùng VIDEO_R.").arg(source));
+    }
+    m_vq.sendTre     = JsonFile::b(o, QStringLiteral("vq_send_tre"), dv.sendTre);
+    m_vq.siteHeightM = qBound(-1000, JsonFile::i(o, QStringLiteral("vq_site_height_m"), dv.siteHeightM), 9000);
+
+    const MhTrackerSetup dm;
+    MhTrackerSetup &m = m_mhTracker;
+    m.initScans        = qBound(1, JsonFile::i(o, QStringLiteral("mh_init_scans"), dm.initScans), 10);
+    m.speedMinMps      = qBound(0.0, JsonFile::num(o, QStringLiteral("mh_speed_min_mps"), dm.speedMinMps), 1000.0);
+    m.speedMaxMps      = qBound(m.speedMinMps, JsonFile::num(o, QStringLiteral("mh_speed_max_mps"), dm.speedMaxMps), 3000.0);
+    m.extrapolateScans = qBound(0, JsonFile::i(o, QStringLiteral("mh_extrapolate_scans"), dm.extrapolateScans), 20);
+    m.scanPeriodS      = qBound(1.0, JsonFile::num(o, QStringLiteral("mh_scan_period_s"), dm.scanPeriodS), 60.0);
+    m.windowAzimuthDeg = qBound(0.1, JsonFile::num(o, QStringLiteral("mh_window_azimuth_deg"), dm.windowAzimuthDeg), 30.0);
+    m.windowRangeKm    = qBound(0.1, JsonFile::num(o, QStringLiteral("mh_window_range_km"), dm.windowRangeKm), 50.0);
+    m.trackIdStart     = qBound(1, JsonFile::i(o, QStringLiteral("mh_track_id_start"), dm.trackIdStart), 4000);
+
+    // Ghi lại khi thiếu khoá: kỹ sư mở file là thấy đủ các tham số để sửa.
+    bool complete = QFile::exists(path);
+    for (const char *key : kAdminKeys)
+        complete = complete && o.contains(QLatin1String(key));
+    if (!complete)
         saveSetupAdmin();
 }
 
@@ -209,6 +253,25 @@ void Settings::saveSetupAdmin()
     // kỹ sư sẽ thêm khoá riêng ở giai đoạn sau, đừng xoá mất của nhau.
     QJsonObject o = JsonFile::read(AppPaths::settingsFile(QStringLiteral("setupadmin.json")));
     o[QStringLiteral("engineer_password")] = m_engineerPassword;
+
+    o[QStringLiteral("vq_range_change")]  = m_vq.rangeChange;
+    o[QStringLiteral("vq_output_p18m")]   = m_vq.outputP18m;
+    o[QStringLiteral("vq_sac")]           = m_vq.sac;
+    o[QStringLiteral("vq_sic")]           = m_vq.sic;
+    o[QStringLiteral("vq_sector_source")] = m_vq.sectorFromVideoI ? QStringLiteral("VIDEO_I")
+                                                                  : QStringLiteral("VIDEO_R");
+    o[QStringLiteral("vq_send_tre")]      = m_vq.sendTre;
+    o[QStringLiteral("vq_site_height_m")] = m_vq.siteHeightM;
+
+    const MhTrackerSetup &m = m_mhTracker;
+    o[QStringLiteral("mh_init_scans")]         = m.initScans;
+    o[QStringLiteral("mh_speed_min_mps")]      = m.speedMinMps;
+    o[QStringLiteral("mh_speed_max_mps")]      = m.speedMaxMps;
+    o[QStringLiteral("mh_extrapolate_scans")]  = m.extrapolateScans;
+    o[QStringLiteral("mh_scan_period_s")]      = m.scanPeriodS;
+    o[QStringLiteral("mh_window_azimuth_deg")] = m.windowAzimuthDeg;
+    o[QStringLiteral("mh_window_range_km")]    = m.windowRangeKm;
+    o[QStringLiteral("mh_track_id_start")]     = m.trackIdStart;
     // Ô "Khóa điều khiển" không còn lưu: mỗi lần mở cửa sổ kỹ sư đều khoá sẵn.
     o.remove(QStringLiteral("admin_locked"));
     JsonFile::write(AppPaths::settingsFile(QStringLiteral("setupadmin.json")), o);

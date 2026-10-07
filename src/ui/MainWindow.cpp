@@ -7,6 +7,8 @@
 #include "net/RawIqStore.h"
 #include "proto/Dataframe.h"
 #include "proto/Packets.h"
+#include "track/TrackStore.h"
+#include "track/VqSender.h"
 #include "ui/AmplitudeView.h"
 #include "ui/ControlPanel.h"
 #include "ui/ControlTab.h"
@@ -22,12 +24,15 @@
 #include <QKeyEvent>
 #include <QVector>
 #include <QCloseEvent>
+#include <QDateTime>
 #include <QMessageBox>
 #include <QSplitter>
 #include <QTabWidget>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QVariantAnimation>
+
+#include <cstring>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -127,6 +132,13 @@ void MainWindow::buildUi()
     m_rawIq = std::make_shared<RawIqStore>();
     m_links->setRawSink(QStringLiteral("Data-RAW"), m_rawIq);
 
+    const Setups &setups = Settings::instance().setups();
+    m_tracks = new TrackStore(this);
+    m_tracks->setCenter(setups.radarLat, setups.radarLon);
+    m_tracks->setDropSeconds(setups.trackDropSec);
+    m_vq = new VqSender(this);
+    applyVqConfig();
+
     m_angleTimer = new QTimer(this);
     m_angleTimer->setInterval(100);
 
@@ -157,6 +169,7 @@ void MainWindow::wireSignals()
 
     connect(m_colorDialog, &ColorSetupDialog::applied, this, [this] {
         m_mapView->refreshSettings();
+        m_tracks->setDropSeconds(Settings::instance().setups().trackDropSec);
         notify(QStringLiteral("Đã áp dụng thiết lập màu sắc và tham số hiển thị."));
     });
 
@@ -187,6 +200,26 @@ void MainWindow::wireSignals()
     connect(m_links, &LinkManager::frameReceived, this, &MainWindow::onFrame);
     connect(m_links, &LinkManager::scnStatus, this, &MainWindow::onScnStatus);
     connect(m_links, &LinkManager::scnCfReceived, this, &MainWindow::onScnCf);
+    connect(m_links, &LinkManager::asterixReceived, this, &MainWindow::onAsterix);
+
+    connect(m_tracks, &TrackStore::trackUpdated, this, [this](const TrackEntry &t, bool added) {
+        if (added && !m_vqTrackNoted) {
+            m_vqTrackNoted = true;
+            notify(QStringLiteral("X18-VQ: nhận quỹ đạo đầu tiên (Tốp %1, %2° - %3km).")
+                       .arg(t.f[Track::TrackTop])
+                       .arg(t.azimuthDeg(), 0, 'f', 1)
+                       .arg(t.rangeM() / 1000.0, 0, 'f', 1));
+        }
+        m_vq->sendTrack(t, false);
+    });
+    connect(m_tracks, &TrackStore::trackRemoved, this, [this](const TrackEntry &t, int reason) {
+        // Dừng kết nối thì dòng SCH-VQ cũng đã đóng, không còn ai để báo.
+        if (reason != TrackStore::RemovedDisconnected)
+            m_vq->sendTrack(t, true);
+    });
+    connect(m_vq, &VqSender::datagram, this, [this](const QByteArray &bytes) {
+        m_links->sendRaw(QStringLiteral("SCH-VQ"), bytes);
+    });
     connect(m_links, &LinkManager::message, this,
             [this](const QString &text, bool isError) { notify(text, isError); });
 
@@ -200,6 +233,8 @@ void MainWindow::wireSignals()
         s.radarLon = lon;
         Settings::instance().saveSetups();
         m_mapView->setRadarCenter(lat, lon);
+        m_tracks->setCenter(lat, lon);
+        applyVqConfig();
         notify(QStringLiteral("Tâm đài chuyển về %1 - %2.")
                    .arg(QString::number(lat, 'f', 6), QString::number(lon, 'f', 6)));
     });
@@ -369,16 +404,20 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
     case Proto::CatVideoR: {
         if (data.size() < 4)
             return;
-        m_azRd = Proto::readU32(data.constData(), be) * Video::kAzimuthLsb;
+        const quint32 az = Proto::readU32(data.constData(), be) & 0x0fffu;
+        m_azRd = az * Video::kAzimuthLsb;
         m_hasAngles = true;
         m_mapView->setRadarSweep(m_azRd);
+        m_vq->sweep(VqSender::SweepVideoR, az);
         return;
     }
     case Proto::CatVideoI: {
         if (data.size() < Video::kDataBytes)
             return;
-        m_azMh = Proto::readU32(data.constData(), be) * Video::kAzimuthLsb;
+        const quint32 az = Proto::readU32(data.constData(), be) & 0x0fffu;
+        m_azMh = az * Video::kAzimuthLsb;
         m_hasAngles = true;
+        m_vq->sweep(VqSender::SweepVideoI, az);
         const QByteArray video = data.mid(4, Video::kSamples);
         m_mapView->setMhSweep(m_azMh, video);
         m_controlPanel->amplitudeView()->setTrace(video);
@@ -402,6 +441,9 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
         m_controlPanel->controlTab()->applyCmdUserFeedback(fields);
         return;
     }
+    case Proto::CatPlot:
+        onPlot(data, be);
+        return;
     case Proto::CatCmdAtBack: {
         quint32 fields[CmdAt::Count] = {0};
         if (!Proto::unpackFields(data, fields, CmdAt::Count, be))
@@ -436,6 +478,64 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
     default:
         return;
     }
+}
+
+void MainWindow::onPlot(const QByteArray &data, bool be)
+{
+    // Hệ thống MH có thể bỏ bớt các trường thông tin chùm / dự phòng ở cuối:
+    // thiếu thì giữ mặc định, chỉ cần đủ đến fuellevel.
+    quint32 f[Plot::Count];
+    std::memcpy(f, Plot::defaults(), sizeof(f));
+    const int n = qMin(int(Plot::Count), int(data.size() / 4));
+    if (n < Plot::kMinCount || !Proto::unpackFields(data, f, n, be))
+        return;
+    if (!m_plotNoted) {
+        m_plotNoted = true;
+        notify(QStringLiteral("Nhận điểm dấu MH đầu tiên (%1° - %2km, chế độ %3).")
+                   .arg(f[Plot::Azm] / 100.0, 0, 'f', 2)
+                   .arg(f[Plot::Range] / 1000.0, 0, 'f', 3)
+                   .arg(f[Plot::Retmode]));
+    }
+
+    m_vq->sendPlot(f);
+
+    // X18-SCN-S: điểm dấu MH thật sang PC dạng Cf loại 12, giờ Unix UTC thật
+    // (SW1 gửi hằng số 907 s); TargetSource và IffNrz giữ như SW1.
+    const qint64 ms = QDateTime::currentMSecsSinceEpoch();
+    ScnCf::PlotOut out;
+    out.time = ScnCf::TimeStamp{quint64(ms / 1000), quint32(ms % 1000) * 1000000u};
+    out.rangeM = f[Plot::Range];
+    out.alphaMas = (f[Plot::Azm] % 36000u) * quint32(ScnCf::kMasPerDegree / 100.0);
+    if (m_links->sendRaw(QStringLiteral("X18-SCN-S"), ScnCf::encodePlot(out))) {
+        ++m_scnPlotsSent;
+        if (m_openPopup == StatusPanel::ScnStatus)
+            showScnStatus();
+    }
+}
+
+void MainWindow::onAsterix(const Asterix::Batch &batch)
+{
+    // CAT034 của P18M không chuyển tiếp sang SCH-VQ: góc anten gửi VQ lấy từ
+    // VIDEO_R / VIDEO_I (analysis-results/04 mục 3).
+    for (const Asterix::Cat048 &r : batch.reports)
+        m_tracks->applyVq(r);
+}
+
+void MainWindow::applyVqConfig()
+{
+    const VqSetup &v = Settings::instance().vq();
+    const Setups &s = Settings::instance().setups();
+    VqSender::Config c;
+    c.encode.sac = quint8(v.sac);
+    c.encode.sic = quint8(v.sic);
+    c.encode.rangeChange = v.rangeChange;
+    c.encode.outputP18m = v.outputP18m;
+    c.sweepSource = v.sectorFromVideoI ? VqSender::SweepVideoI : VqSender::SweepVideoR;
+    c.sendTre = v.sendTre;
+    c.site.lat = s.radarLat;
+    c.site.lon = s.radarLon;
+    c.site.heightM = v.siteHeightM;
+    m_vq->setConfig(c);
 }
 
 void MainWindow::sendCmdAt()
@@ -540,6 +640,8 @@ void MainWindow::setConnected(bool connected)
         m_controlPanel->amplitudeView()->clearTrace();
         m_mhPopup->clearStatus();
         m_engineerWindow->clearBack();
+        m_tracks->removeAll(TrackStore::RemovedDisconnected);
+        m_vq->resetSweep();
         m_statusPanel->setSweepAngles(false, 0.0, 0.0);
     }
 
@@ -551,6 +653,9 @@ void MainWindow::setConnected(bool connected)
     m_scnStatus = ScnText::Status();
     m_scnLastCf.clear();
     m_scnCfCount = 0;
+    m_scnPlotsSent = 0;
+    m_vqTrackNoted = false;
+    m_plotNoted = false;
     m_statusPanel->setPopupState(StatusPanel::ScnStatus, connected ? StatusPanel::Warn : StatusPanel::Idle);
     showScnStatus();
 
@@ -601,6 +706,7 @@ void MainWindow::showScnStatus()
             lines << QStringLiteral("Lệnh lạ gần nhất: %1").arg(s.unknownLine);
     }
     lines << QStringLiteral("UDP Cf: %1 gói").arg(m_scnCfCount);
+    lines << QStringLiteral("Điểm dấu MH đã gửi PC: %1").arg(m_scnPlotsSent);
     if (!m_scnLastCf.isEmpty())
         lines << QStringLiteral("Gói gần nhất: %1").arg(m_scnLastCf);
     m_scnPopup->setNote(lines.join(QLatin1Char('\n')), true);

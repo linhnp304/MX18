@@ -261,6 +261,88 @@ const char *name(int index);
 
 } // namespace StatusParams
 
+// ------------------------------------------------ giai đoạn 6: mục tiêu
+
+// Điểm dấu MH (0x2031) nhận trên "Data-Status".
+namespace Plot {
+
+enum Field {
+    Azm = 0,          // 0..35999, 0,01 độ
+    Range,            // mét
+    Retmode,          // 1..9 chế độ phản hồi
+    Commander,        // 0,1 — chỉ có ở retmode 3
+    Flightid,         // số hiệu, 0 = bỏ qua — chỉ có ở retmode 4
+    Altitude,         // mét, 0 = bỏ qua — chỉ có ở retmode 6
+    Fuellevel,        // 0..99 %, 0 = bỏ qua — chỉ có ở retmode 6
+    CxNum,            // số xung trong chùm
+    CxAzmStart, CxAzmEnd,   // phương vị encoder 0..4095 đầu / cuối chùm
+    CxRangeStart,     // ô cự ly đầu chùm
+    Reserved1, Reserved2, Reserved3,
+    Count
+};
+
+// Trường bắt buộc phải có: hệ thống MH bỏ bớt phần dự phòng / thông tin chùm
+// thì gói vẫn dùng được.
+constexpr int kMinCount = Fuellevel + 1;
+
+const quint32 *defaults();
+
+} // namespace Plot
+
+// Quỹ đạo (0x2051): không đi trên mạng, là bản ghi của danh sách quỹ đạo.
+namespace Track {
+
+enum Field {
+    TrackType = 0,    // Type
+    TrackStatus,      // Status
+    TrackId,          // khoá quản lý danh sách
+    TrackTop,         // số đầu tốp hiển thị, ban đầu = track_id
+    Azm,              // 0..35999, 0,01 độ
+    Range,            // mét
+    Velocity,         // m/s
+    Heading,          // 0..35999, 0,01 độ
+    IffReturnedMode,  // 0..9, 0 = chưa có nhận dạng
+    IffCommander,
+    IffFlightid,
+    IffAltitude,      // mét
+    IffFuellevel,     // %
+    Lat, Lng,         // float IEEE 754 32 bit, độ
+    Reserved01, Reserved02, Reserved03, Reserved04,
+    WindowAzm1, WindowAzm2,       // cửa sổ dự đoán, 0,01 độ
+    WindowRange1, WindowRange2,   // cửa sổ dự đoán, mét
+    Reserved11, Reserved12, Reserved13, Reserved14,
+    Reserved21, Reserved22, Reserved23, Reserved24, Reserved25,
+    Count
+};
+
+enum Type : quint32 {
+    TypeVq = 1,       // nhận từ X18-VQ
+    TypeVqMh = 2,     // nhận từ X18-VQ, đã hợp nhất điểm dấu MH
+    TypeMh = 3,       // khởi tạo từ điểm dấu MH
+};
+
+enum Status : quint32 {
+    StatusInit = 1, StatusConfirmed, StatusTracking, StatusLost, StatusExtrapolated, StatusDeleted,
+};
+
+const quint32 *defaults();
+
+// lat/lng nằm trong mảng trường dưới dạng bit của số float.
+double latLng(quint32 raw);
+quint32 rawLatLng(double deg);
+
+} // namespace Track
+
+// Hướng có báo động (0x7720) nhận trên "Data-Status".
+namespace AlarmHead {
+
+enum Field {
+    Head = 0,         // 0..35999, 0,01 độ
+    Count
+};
+
+} // namespace AlarmHead
+
 // Đường quét: azimuth 0..4095 trên một vòng tròn.
 namespace Video {
 

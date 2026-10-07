@@ -47,6 +47,7 @@ struct Setups {
 
     DisplayColors colors;
     int plotHoldSec = 8;       // giây hiển thị điểm dấu MH
+    int trackDropSec = 40;     // giây không có cập nhật thì xoá quỹ đạo
     int trackSizePct = 100;
     int plotSizePct = 100;
 
@@ -63,6 +64,35 @@ struct StatusLimits {
     int minCs = 60;     // công suất phát tối thiểu khi đang nối phát
     int maxT  = 90;     // nhiệt độ tối đa
     int maxH  = 99;     // độ ẩm tối đa
+};
+
+// Luồng SCH-VQ (gửi ASTERIX cho VQ) — khoá trong setupadmin.json, chưa có giao
+// diện (anh Linh chốt ở giai đoạn 5, analysis-results/04 mục 4).
+struct VqSetup {
+    double rangeChange = 2.0;          // vq_range_change: hệ số k, 2,0 = LSB chuẩn
+    bool outputP18m = false;           // vq_output_p18m: SP kiểu P18M thay vì ELM-2288
+    int sac = 148;                     // vq_sac
+    int sic = 101;                     // vq_sic
+    // vq_sector_source: góc anten cho North marker / Sector crossing,
+    // "VIDEO_R" hoặc "VIDEO_I".
+    bool sectorFromVideoI = false;
+    bool sendTre = true;               // vq_send_tre: bản tin cuối khi xoá quỹ đạo
+    int siteHeightM = 15;              // vq_site_height_m: độ cao đài trong North marker
+};
+
+// Bộ bám quỹ đạo từ điểm dấu MH — khoá trong setupadmin.json để kỹ sư chỉnh,
+// chưa có giao diện (step-06 mục 9).
+struct MhTrackerSetup {
+    int initScans = 2;                 // mh_init_scans: số vòng liên tiếp để khởi tạo
+    double speedMinMps = 10.0;         // mh_speed_min_mps
+    double speedMaxMps = 333.3;        // mh_speed_max_mps
+    int extrapolateScans = 3;          // mh_extrapolate_scans
+    double scanPeriodS = 10.0;         // mh_scan_period_s: trước khi đo được chu kỳ quét
+    double windowAzimuthDeg = 3.0;     // mh_window_azimuth_deg: cửa sổ dự đoán
+    double windowRangeKm = 3.0;        // mh_window_range_km
+    // mh_track_id_start: khác dải số hiệu của P18M; Track Number CAT048 chỉ 12
+    // bit nên quay vòng trong [giá trị này, 4095].
+    int trackIdStart = 3001;
 };
 
 struct NetNode {
@@ -89,6 +119,8 @@ public:
     void setNetNodes(const QVector<NetNode> &nodes);
 
     QString engineerPassword() const { return m_engineerPassword; }
+    const VqSetup &vq() const { return m_vq; }
+    const MhTrackerSetup &mhTracker() const { return m_mhTracker; }
 
     void saveSetups();
     void saveSwInfo();
@@ -122,5 +154,7 @@ private:
     StatusLimits m_limits;
     QVector<NetNode> m_netNodes;
     QString m_engineerPassword = QStringLiteral("X18");
+    VqSetup m_vq;
+    MhTrackerSetup m_mhTracker;
     QStringList m_loadErrors;
 };

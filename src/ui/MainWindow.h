@@ -2,6 +2,7 @@
 
 #include "map/MapData.h"
 #include "net/LinkConfig.h"
+#include "proto/Asterix.h"
 #include "proto/ScnCf.h"
 #include "proto/ScnText.h"
 #include "ui/StatusPanel.h"
@@ -23,6 +24,8 @@ class PlaceholderPopup;
 class PingService;
 class RadarCenterPopup;
 class RawIqStore;
+class TrackStore;
+class VqSender;
 class ViewIqWindow;
 class SlidePopup;
 class QSplitter;
@@ -56,6 +59,9 @@ private:
     void onFrame(quint32 category, quint32 serial, const QByteArray &data, bool be);
     void onScnStatus(const ScnText::Status &status);
     void onScnCf(const ScnCf::Message &message);
+    void onAsterix(const Asterix::Batch &batch);
+    void onPlot(const QByteArray &data, bool be);
+    void applyVqConfig();
     void showScnStatus();
     void sendCmdAt();
     void sendCmdUser();
@@ -101,6 +107,13 @@ private:
     // Dùng chung giữa luồng nhận "Data-RAW" và cửa sổ ViewIQ; shared_ptr để
     // luồng nhận không bao giờ giữ con trỏ treo dù thứ tự huỷ thế nào.
     std::shared_ptr<RawIqStore> m_rawIq;
+
+    // Danh sách quỹ đạo (X18-VQ) và bộ dựng gói gửi VQ (SCH-VQ).
+    TrackStore *m_tracks = nullptr;
+    VqSender *m_vq = nullptr;
+    bool m_vqTrackNoted = false;
+    bool m_plotNoted = false;
+    quint32 m_scnPlotsSent = 0;
 
     // Góc quét đến 400 lần/giây cho mỗi loại; thanh trạng thái chỉ cần 10 lần.
     QTimer *m_angleTimer = nullptr;

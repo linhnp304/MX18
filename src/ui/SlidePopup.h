@@ -28,6 +28,9 @@ public:
 signals:
     void closed();
 
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
 private:
     QWidget *m_body = nullptr;
     QPropertyAnimation *m_anim = nullptr;

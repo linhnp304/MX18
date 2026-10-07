@@ -75,8 +75,18 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
 - **X18-SCN** (TCP Server 10555): MX18 đóng vai thiết bị SCN cho máy "PC" — gửi
   khối Start, trả lời lệnh và keepalive, mỗi lúc một PC.
 - **X18-SCN-R / X18-SCN-S** (UDP, gói nhị phân "Cf" little-endian): giải mã gói
-  PC gửi đến; chiều gửi chuẩn bị cho điểm dấu MH.
+  PC gửi đến; mỗi điểm dấu MH nhận được gửi sang PC dạng Cf loại 12 (Plot).
 - Cửa sổ **"Trạng thái SCN"** (panel 3) tạm hiện trạng thái phiên làm việc với PC.
+- **X18-VQ** (UDP, ASTERIX CAT034/048 từ P18M): giải mã nhiều khối / nhiều bản ghi
+  mỗi datagram, có kiểm tra biên. Bản ghi CAT048 có Track Number đưa vào **danh
+  sách quỹ đạo** (gói TRACK `0x2051`): phương vị - cự ly, lat/lng tính từ tâm đài,
+  vết suốt đời quỹ đạo; xoá khi P18M gửi bản tin cuối (I048/170 TRE = 1) hoặc khi
+  quá `track_drop_sec` giây (mặc định 40) không có cập nhật.
+- **SCH-VQ** (UDP, ASTERIX gửi VQ): quỹ đạo mỗi lần cập nhật (bản tin cuối TRE = 1
+  khi xoá), điểm dấu MH (gói PLOT `0x2031` trên `Data-Status`), North marker và
+  Sector crossing theo góc anten của VIDEO_R hoặc VIDEO_I. Time of Day đúng chuẩn
+  (giây từ nửa đêm UTC × 128).
+- Gói **ALARM_HEAD** (`0x7720`, hướng báo động) đã có định nghĩa trường.
 
 ## Yêu cầu biên dịch
 
@@ -154,7 +164,7 @@ MX18(.exe)
 | `setups.json` | Toàn bộ lựa chọn trong tab "Cài đặt", bảng màu và toạ độ tâm đài |
 | `checkip.json` | Danh sách nút mạng cần ping: `name`, `address`, `kind` (0 không cảnh báo, 1 cảnh báo, 2 báo lỗi) |
 | `connect.json` | Bảng cổng gửi/nhận cho từng loại dữ liệu; mỗi dòng có `format` (`dataframe`, `raw_iq`, `scn_text`, `scn_cf`, `asterix`) và `big_endian` — hai khoá này chỉ sửa trong file |
-| `setupadmin.json` | Thiết lập cửa sổ mức kỹ sư: mật khẩu (mặc định `X18`). Ô "Khóa điều khiển" không lưu — mỗi lần mở cửa sổ đều khoá sẵn |
+| `setupadmin.json` | Thiết lập mức kỹ sư: mật khẩu (mặc định `X18`; ô "Khóa điều khiển" không lưu — mỗi lần mở cửa sổ đều khoá sẵn). Các khoá chưa có giao diện, sửa trong file: luồng SCH-VQ `vq_range_change` (2.0 = LSB chuẩn ASTERIX), `vq_output_p18m` (false = SP kiểu ELM-2288), `vq_sac`/`vq_sic` (148/101), `vq_sector_source` (`VIDEO_R`/`VIDEO_I`), `vq_send_tre`, `vq_site_height_m`; bộ bám quỹ đạo từ điểm dấu MH `mh_*` (số vòng khởi tạo, vận tốc giới hạn, số vòng ngoại suy, chu kỳ quét mặc định, cửa sổ dự đoán, số hiệu bắt đầu) |
 | `statuserror.json` | Ngưỡng báo lỗi của cửa sổ "Trạng thái MH": `Min50V`, `Max50V`, `Min5V`, `Max5V`, `MinCs`, `MaxT`, `MaxH` |
 | `params.json` | Tham số đài (để dành cho giai đoạn sau; bảng tham số của tab "Params" lấy trực tiếp từ gói `STATUS_PARAMS`) |
 

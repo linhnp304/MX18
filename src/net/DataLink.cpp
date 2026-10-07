@@ -115,9 +115,18 @@ void LinkWorker::openUdp()
 
     if (m_entry.direction == LinkEntry::Send) {
         // Chỉ gửi: LocalPort = 0 nghĩa là để hệ điều hành tự chọn cổng nguồn.
+        // Có cổng cố định (SCH-VQ gửi từ 10770) thì bên nhận có thể lọc theo
+        // cổng nguồn, nên máy chưa gắn đúng địa chỉ vẫn giữ cổng trên mọi card.
         if (m_entry.localPort != 0 && !m_udp->bind(m_localAddr, m_entry.localPort)) {
-            emit message(QStringLiteral("Không mở được cổng gửi %1: %2")
-                             .arg(describe(m_entry), m_udp->errorString()), true);
+            const QString first = m_udp->errorString();
+            if (m_localAddr == QHostAddress(QHostAddress::AnyIPv4)
+                || !m_udp->bind(QHostAddress(QHostAddress::AnyIPv4), m_entry.localPort)) {
+                emit message(QStringLiteral("Không mở được cổng gửi %1: %2")
+                                 .arg(describe(m_entry), first), true);
+            } else {
+                emit message(QStringLiteral("%1: máy không có địa chỉ %2, gửi từ cổng %3 trên mọi card mạng.")
+                                 .arg(m_entry.category, m_entry.localIp).arg(m_entry.localPort), false);
+            }
         }
         // SW1 gửi byte "0" cho PC ngay khi mở luồng UDP; giữ lại vì vô hại và PC
         // có thể dựa vào nó để biết SCN đã sẵn sàng.
@@ -302,9 +311,18 @@ void LinkWorker::handleDatagram(const QByteArray &raw)
             warnDecodeOnce(QStringLiteral("gói Cf hỏng (%1)").arg(error));
         return;
     }
+    case LinkEntry::Asterix: {
+        Asterix::Batch batch;
+        QString error;
+        if (!Asterix::decode(raw, &batch, &error))
+            warnDecodeOnce(QStringLiteral("gói ASTERIX hỏng (%1)").arg(error));
+        // Gói hỏng giữa chừng vẫn giữ các bản ghi đã đọc được trước chỗ hỏng.
+        if (!batch.services.isEmpty() || !batch.reports.isEmpty())
+            emit asterixReceived(batch);
+        return;
+    }
     default:
-        // raw_iq thiếu nơi nhận (đã báo lúc mở cổng); scn_text không đi trên
-        // UDP; asterix giải mã ở giai đoạn 6 phiên 2.
+        // raw_iq thiếu nơi nhận (đã báo lúc mở cổng); scn_text không đi trên UDP.
         return;
     }
 }
@@ -438,6 +456,7 @@ LinkManager::LinkManager(QObject *parent)
     // Hai kiểu này đi qua hàng đợi tín hiệu từ luồng của cổng về luồng giao diện.
     qRegisterMetaType<ScnText::Status>();
     qRegisterMetaType<ScnCf::Message>();
+    qRegisterMetaType<Asterix::Batch>();
 }
 
 LinkManager::~LinkManager()
@@ -464,6 +483,7 @@ void LinkManager::start()
         connect(worker, &LinkWorker::message, this, &LinkManager::message);
         connect(worker, &LinkWorker::scnStatus, this, &LinkManager::scnStatus);
         connect(worker, &LinkWorker::scnCfReceived, this, &LinkManager::scnCfReceived);
+        connect(worker, &LinkWorker::asterixReceived, this, &LinkManager::asterixReceived);
 
         m_threads.append(thread);
         m_workers.append(worker);

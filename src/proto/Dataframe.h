@@ -41,6 +41,12 @@ enum Category : quint32 {
 
     CatStatusCalib  = 0x99920, // kết quả hiệu chuẩn, 3..5 gói/giây
     CatStatusParams = 0x99930, // 100 tham số lưu trên hệ thống XL MH
+
+    // Giai đoạn 6: điểm dấu MH và hướng báo động về trên "Data-Status"; gói quỹ
+    // đạo chỉ dùng nội bộ để quản lý danh sách.
+    CatPlot      = 0x2031,
+    CatTrack     = 0x2051,
+    CatAlarmHead = 0x7720,
 };
 
 struct Frame {

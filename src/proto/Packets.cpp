@@ -2,6 +2,8 @@
 
 #include <QString>
 
+#include <cstring>
+
 namespace CmdAt {
 
 const quint32 *defaults()
@@ -289,3 +291,57 @@ const char *name(int index)
 }
 
 } // namespace StatusParams
+
+namespace Plot {
+
+const quint32 *defaults()
+{
+    static const quint32 d[Count] = {
+        0,  // azm
+        0,  // range
+        1,  // retmode
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0
+    };
+    return d;
+}
+
+} // namespace Plot
+
+namespace Track {
+
+const quint32 *defaults()
+{
+    static const quint32 d[Count] = {
+        TypeVq,          // track_type
+        StatusTracking,  // track_status
+        1,               // track_id
+        1,               // track_top
+        0, 0, 0, 0,      // azm, range, velocity, heading
+        0, 0, 0, 0, 0,   // nhận dạng
+        0, 0,            // lat, lng = 0.0f
+        0, 0, 0, 0,
+        0, 0, 0, 0,      // cửa sổ dự đoán
+        0, 0, 0, 0,
+        0, 0, 0, 0, 0
+    };
+    return d;
+}
+
+double latLng(quint32 raw)
+{
+    float f = 0.0f;
+    std::memcpy(&f, &raw, sizeof(f));
+    return double(f);
+}
+
+quint32 rawLatLng(double deg)
+{
+    const float f = float(deg);
+    quint32 raw = 0;
+    std::memcpy(&raw, &f, sizeof(raw));
+    return raw;
+}
+
+} // namespace Track

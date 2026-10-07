@@ -63,6 +63,13 @@ set(MX18_SOURCES
     src/proto/ScnCf.h
     src/proto/ScnText.cpp
     src/proto/ScnText.h
+    src/proto/Asterix.cpp
+    src/proto/Asterix.h
+
+    src/track/TrackStore.cpp
+    src/track/TrackStore.h
+    src/track/VqSender.cpp
+    src/track/VqSender.h
 
     src/ui/Theme.cpp
     src/ui/Theme.h
