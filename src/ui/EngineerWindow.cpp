@@ -4,6 +4,7 @@
 #include "ui/AdminTabs.h"
 
 #include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -155,7 +156,7 @@ EngineerWindow::EngineerWindow(QWidget *parent)
         t->setLocked(m_lockBox->isChecked());
 
     // Kích thước mặc định vừa khít tab "ADMIN" — tab dài và rộng nhất. Các tab
-    // còn lại ngắn hơn nên không phải cuộn; riêng tab "Connect" hẹp hơn bảng 8
+    // còn lại ngắn hơn nên không phải cuộn; riêng tab "Connect" hẹp hơn bảng 10
     // cột của nó nên bảng tự hiện thanh cuộn ngang.
     layout()->activate();
     const QSize content = m_adminTab->contentSizeHint();
@@ -297,11 +298,16 @@ QWidget *EngineerWindow::buildConnectTab()
     auto *linkLay = new QVBoxLayout(linkBox);
     linkLay->setContentsMargins(8, 6, 8, 8);
 
-    m_links = new QTableWidget(0, 8, linkBox);
+    m_links = new QTableWidget(0, 10, linkBox);
     m_links->setHorizontalHeaderLabels({QStringLiteral("Phân loại"), QStringLiteral("Send/Recv"),
                                         QStringLiteral("TCP/UDP"), QStringLiteral("Type"),
                                         QStringLiteral("LocalIP"), QStringLiteral("LocalPort"),
-                                        QStringLiteral("RemoteIP"), QStringLiteral("RemotePort")});
+                                        QStringLiteral("RemoteIP"), QStringLiteral("RemotePort"),
+                                        QStringLiteral("Định dạng"), QStringLiteral("Byte")});
+    m_links->horizontalHeaderItem(8)->setToolTip(
+        QStringLiteral("Khoá \"format\" trong connect.json — chỉ sửa được trong file."));
+    m_links->horizontalHeaderItem(9)->setToolTip(
+        QStringLiteral("Khoá \"big_endian\" trong connect.json — chỉ sửa được trong file."));
     m_links->verticalHeader()->setVisible(false);
     m_links->setSelectionMode(QAbstractItemView::NoSelection);
     m_links->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -309,16 +315,17 @@ QWidget *EngineerWindow::buildConnectTab()
 
     auto *linkBtns = new QHBoxLayout;
     auto *saveLinkBtn = new QPushButton(QStringLiteral("Lưu cấu hình"), linkBox);
-    // Không có thêm/xoá dòng: đủ 10 loại dữ liệu, cần khác thì kỹ sư sửa file.
-    auto *hint = new QLabel(QStringLiteral("Đổi xong phải khởi động lại phần mềm."), linkBox);
+    // Không có thêm/xoá dòng: đủ 12 loại dữ liệu, cần khác thì kỹ sư sửa file.
+    auto *hint = new QLabel(QStringLiteral("Đổi xong phải khởi động lại phần mềm. Định dạng và "
+                                           "thứ tự byte sửa trong settings/connect.json."), linkBox);
     hint->setStyleSheet(QStringLiteral("color:#8a95a1;font-style:italic;"));
     linkBtns->addWidget(hint);
     linkBtns->addStretch(1);
     linkBtns->addWidget(saveLinkBtn);
     linkLay->addLayout(linkBtns);
     // Hệ số giãn = số dòng muốn thấy trừ đi sàn một dòng của relaxTable(), nhờ
-    // vậy ở kích thước tự nhiên phần dư chia ra đúng 10 dòng và 8 dòng.
-    lay->addWidget(linkBox, 9);
+    // vậy ở kích thước tự nhiên phần dư chia ra đúng 12 dòng và 8 dòng.
+    lay->addWidget(linkBox, 11);
 
     // --- Group: danh sách các nút mạng
     auto *nodeBox = new QGroupBox(QStringLiteral("Danh sách các nút mạng"), page);
@@ -348,8 +355,8 @@ QWidget *EngineerWindow::buildConnectTab()
 
     fillLinkTable();
     fillNodeTable();
-    // Đủ 10 dòng cấu hình cổng (không cho thêm/xoá) và 8 dòng nút mạng.
-    fitTable(m_links, 10);
+    // Đủ 12 dòng cấu hình cổng (không cho thêm/xoá) và 8 dòng nút mạng.
+    fitTable(m_links, 12);
     fitTable(m_nodes, 8);
 
     connect(saveLinkBtn, &QPushButton::clicked, this, &EngineerWindow::saveLinks);
@@ -424,6 +431,18 @@ void EngineerWindow::fillLinkTable()
         m_links->setCellWidget(r, 5, makePortSpin(e.localPort));
         m_links->setCellWidget(r, 6, makeIpEdit(e.remoteIp));
         m_links->setCellWidget(r, 7, makePortSpin(e.remotePort));
+
+        // Hai cột chỉ đọc (anh Linh chốt): đổi nhầm định dạng là cả luồng mất dữ
+        // liệu, nên kỹ sư phải chủ ý sửa file. scn_text không có số nhiều byte.
+        const QString byteOrder = (e.format == LinkEntry::ScnText)
+            ? QStringLiteral("—") : (e.bigEndian ? QStringLiteral("BE") : QStringLiteral("LE"));
+        for (int c = 8; c <= 9; ++c) {
+            auto *item = new QTableWidgetItem(c == 8 ? LinkEntry::formatName(e.format) : byteOrder);
+            item->setFlags(Qt::ItemIsEnabled);
+            item->setTextAlignment(Qt::AlignCenter);
+            item->setForeground(QColor(0x8a, 0x95, 0xa1));
+            m_links->setItem(r, c, item);
+        }
     }
 }
 
@@ -433,7 +452,9 @@ void EngineerWindow::saveLinks()
     QVector<LinkEntry> entries;
 
     for (int r = 0; r < m_links->rowCount(); ++r) {
-        LinkEntry e;
+        // Định dạng và thứ tự byte không sửa trên bảng: giữ nguyên giá trị đang
+        // có trong file (kể cả chỉnh tay của kỹ sư) theo đúng dòng đó.
+        LinkEntry e = r < cfg.entries.size() ? cfg.entries.at(r) : LinkEntry();
         e.category = comboText(m_links, r, 0);
         e.direction = comboIndex(m_links, r, 1);
         e.protocol = comboIndex(m_links, r, 2);

@@ -68,4 +68,11 @@ class PlaceholderPopup : public SlidePopup
     Q_OBJECT
 public:
     PlaceholderPopup(const QString &title, const QString &note, QWidget *parent);
+
+    // Cửa sổ "Trạng thái SCN" chưa có đặc tả giao diện: tạm hiện trạng thái
+    // phiên làm việc với PC dạng chữ để thử với hệ thống thật.
+    void setNote(const QString &note, bool plain);
+
+private:
+    QLabel *m_label = nullptr;
 };

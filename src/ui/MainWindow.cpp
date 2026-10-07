@@ -36,7 +36,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Đọc cấu hình cổng gửi/nhận trước khi dựng giao diện: cửa sổ kỹ sư và nút
     // "Kết nối hệ thống" đều dùng chung bản cấu hình này.
-    m_linkConfig = LinkConfig::load(&m_linkConfigError);
+    m_linkConfig = LinkConfig::load(&m_linkConfigError, &m_linkConfigNote);
 
     buildUi();
     wireSignals();
@@ -61,6 +61,8 @@ void MainWindow::reportConfigErrors()
     const QStringList errors = Settings::instance().takeLoadErrors();
     for (const QString &e : errors)
         notify(e, true);
+    if (!m_linkConfigNote.isEmpty())
+        notify(m_linkConfigNote);
     if (!m_linkConfigError.isEmpty())
         notify(m_linkConfigError, true);
 }
@@ -97,8 +99,8 @@ void MainWindow::buildUi()
     m_notifyPopup = new NotifyPopup(central);
     m_networkPopup = new NetworkPopup(central);
     m_mhPopup = new MhStatusPopup(central);
-    auto *scnPopup = new PlaceholderPopup(QStringLiteral("Trạng thái SCN"),
-                                          QStringLiteral("Nội dung trạng thái SCN\n(giai đoạn sau)"), central);
+    m_scnPopup = new PlaceholderPopup(QStringLiteral("Trạng thái SCN"),
+                                      QStringLiteral("Chưa kết nối hệ thống."), central);
     auto *svrPopup = new PlaceholderPopup(QStringLiteral("Trạng thái SVR"),
                                           QStringLiteral("Nội dung trạng thái SVR\n(giai đoạn sau)"), central);
     m_radarPopup = new RadarCenterPopup(central);
@@ -107,7 +109,7 @@ void MainWindow::buildUi()
     m_popups[StatusPanel::Notify] = m_notifyPopup;
     m_popups[StatusPanel::Network] = m_networkPopup;
     m_popups[StatusPanel::MhStatus] = m_mhPopup;
-    m_popups[StatusPanel::ScnStatus] = scnPopup;
+    m_popups[StatusPanel::ScnStatus] = m_scnPopup;
     m_popups[StatusPanel::SvrStatus] = svrPopup;
     m_popups[StatusPanel::RadarCenter] = m_radarPopup;
 
@@ -183,6 +185,8 @@ void MainWindow::wireSignals()
             });
 
     connect(m_links, &LinkManager::frameReceived, this, &MainWindow::onFrame);
+    connect(m_links, &LinkManager::scnStatus, this, &MainWindow::onScnStatus);
+    connect(m_links, &LinkManager::scnCfReceived, this, &MainWindow::onScnCf);
     connect(m_links, &LinkManager::message, this,
             [this](const QString &text, bool isError) { notify(text, isError); });
 
@@ -359,10 +363,8 @@ void MainWindow::toggleControlPanel()
 
 // --------------------------------------------------- gói tin nhận được
 
-void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &data)
+void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &data, bool be)
 {
-    const bool be = m_linkConfig.bigEndian;
-
     switch (category) {
     case Proto::CatVideoR: {
         if (data.size() < 4)
@@ -440,8 +442,8 @@ void MainWindow::sendCmdAt()
 {
     if (!m_links->isRunning())
         return;
-    const QByteArray data = Proto::packFields(m_controlPanel->controlTab()->cmdAtFields(),
-                                              CmdAt::Count, m_linkConfig.bigEndian);
+    const QByteArray data = Proto::packFields(m_controlPanel->controlTab()->cmdAtFields(), CmdAt::Count,
+                                              m_linkConfig.bigEndianFor(QStringLiteral("Cmd-Admin")));
     m_links->send(QStringLiteral("Cmd-Admin"), Proto::CatCmdAt, data);
 }
 
@@ -449,8 +451,8 @@ void MainWindow::sendCmdUser()
 {
     if (!m_links->isRunning())
         return;
-    const QByteArray data = Proto::packFields(m_controlPanel->controlTab()->cmdUserFields(),
-                                              CmdUser::Count, m_linkConfig.bigEndian);
+    const QByteArray data = Proto::packFields(m_controlPanel->controlTab()->cmdUserFields(), CmdUser::Count,
+                                              m_linkConfig.bigEndianFor(QStringLiteral("Cmd-User")));
     m_links->send(QStringLiteral("Cmd-User"), Proto::CatCmdUser, data);
 }
 
@@ -461,7 +463,7 @@ void MainWindow::sendAdminCommand(quint32 category, const QVector<quint32> &fiel
         return;
     }
     const QByteArray data = Proto::packFields(fields.constData(), fields.size(),
-                                              m_linkConfig.bigEndian);
+                                              m_linkConfig.bigEndianFor(QStringLiteral("Cmd-Admin")));
     if (!m_links->send(QStringLiteral("Cmd-Admin"), category, data)) {
         notify(QStringLiteral("connect.json không có dòng \"Cmd-Admin\" để gửi lệnh mức kỹ sư."),
                true);
@@ -544,11 +546,64 @@ void MainWindow::setConnected(bool connected)
     // Chưa kết nối thì các trạng thái MH/SCN/SVR để màu trắng xám.
     const StatusPanel::StateColor c = connected ? StatusPanel::Ok : StatusPanel::Idle;
     m_statusPanel->setPopupState(StatusPanel::MhStatus, c);
-    m_statusPanel->setPopupState(StatusPanel::ScnStatus, c);
     m_statusPanel->setPopupState(StatusPanel::SvrStatus, c);
+    // SCN chỉ xanh khi PC đã kết nối vào (onScnStatus); đang chờ thì vàng.
+    m_scnStatus = ScnText::Status();
+    m_scnLastCf.clear();
+    m_scnCfCount = 0;
+    m_statusPanel->setPopupState(StatusPanel::ScnStatus, connected ? StatusPanel::Warn : StatusPanel::Idle);
+    showScnStatus();
 
     notify(connected ? QStringLiteral("Bắt đầu nhận/gửi dữ liệu.")
                      : QStringLiteral("Đã dừng nhận/gửi dữ liệu."));
+}
+
+// ------------------------------------------------------------- luồng SCN
+
+void MainWindow::onScnStatus(const ScnText::Status &status)
+{
+    m_scnStatus = status;
+    if (m_connected) {
+        m_statusPanel->setPopupState(StatusPanel::ScnStatus,
+                                     status.connected ? StatusPanel::Ok : StatusPanel::Warn);
+    }
+    showScnStatus();
+}
+
+void MainWindow::onScnCf(const ScnCf::Message &message)
+{
+    if (m_scnCfCount == 0)
+        notify(QStringLiteral("X18-SCN-R: nhận gói Cf đầu tiên từ PC (%1).").arg(ScnCf::describe(message)));
+    ++m_scnCfCount;
+    m_scnLastCf = ScnCf::describe(message);
+    showScnStatus();
+}
+
+void MainWindow::showScnStatus()
+{
+    if (!m_connected) {
+        m_scnPopup->setNote(QStringLiteral("Chưa kết nối hệ thống."), false);
+        return;
+    }
+    const ScnText::Status &s = m_scnStatus;
+    QStringList lines;
+    if (s.connected)
+        lines << QStringLiteral("TCP: PC %1 đã kết nối").arg(s.peer);
+    else
+        lines << (s.listening ? QStringLiteral("TCP: đang chờ PC kết nối")
+                              : QStringLiteral("TCP: chưa mở cổng"));
+    if (s.connected) {
+        lines << QStringLiteral("Keepalive: %1").arg(s.keepalive.isEmpty() ? QStringLiteral("—") : s.keepalive);
+        lines << QStringLiteral("scnrpmode %1 · scnrpband %2 · scnselrprz %3")
+                     .arg(s.scnrpmode, s.scnrpband, s.scnselrprz);
+        lines << QStringLiteral("Số dòng lệnh đã nhận: %1").arg(s.linesIn);
+        if (!s.unknownLine.isEmpty())
+            lines << QStringLiteral("Lệnh lạ gần nhất: %1").arg(s.unknownLine);
+    }
+    lines << QStringLiteral("UDP Cf: %1 gói").arg(m_scnCfCount);
+    if (!m_scnLastCf.isEmpty())
+        lines << QStringLiteral("Gói gần nhất: %1").arg(m_scnLastCf);
+    m_scnPopup->setNote(lines.join(QLatin1Char('\n')), true);
 }
 
 void MainWindow::requestExit()

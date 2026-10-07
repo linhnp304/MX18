@@ -2,6 +2,8 @@
 
 #include "map/MapData.h"
 #include "net/LinkConfig.h"
+#include "proto/ScnCf.h"
+#include "proto/ScnText.h"
 #include "ui/StatusPanel.h"
 
 #include <QMainWindow>
@@ -17,6 +19,7 @@ class MapView;
 class MhStatusPopup;
 class NetworkPopup;
 class NotifyPopup;
+class PlaceholderPopup;
 class PingService;
 class RadarCenterPopup;
 class RawIqStore;
@@ -50,7 +53,10 @@ private:
     void reportConfigErrors();
 
     // Phân loại gói tin nhận được về đúng nơi hiển thị.
-    void onFrame(quint32 category, quint32 serial, const QByteArray &data);
+    void onFrame(quint32 category, quint32 serial, const QByteArray &data, bool be);
+    void onScnStatus(const ScnText::Status &status);
+    void onScnCf(const ScnCf::Message &message);
+    void showScnStatus();
     void sendCmdAt();
     void sendCmdUser();
     void sendAdminCommand(quint32 category, const QVector<quint32> &fields);
@@ -75,6 +81,7 @@ private:
     StatusPanel *m_statusPanel = nullptr;
 
     NotifyPopup *m_notifyPopup = nullptr;
+    PlaceholderPopup *m_scnPopup = nullptr;
     NetworkPopup *m_networkPopup = nullptr;
     MhStatusPopup *m_mhPopup = nullptr;
     RadarCenterPopup *m_radarPopup = nullptr;
@@ -89,6 +96,7 @@ private:
 
     LinkConfig m_linkConfig;
     QString m_linkConfigError;
+    QString m_linkConfigNote;
     LinkManager *m_links = nullptr;
     // Dùng chung giữa luồng nhận "Data-RAW" và cửa sổ ViewIQ; shared_ptr để
     // luồng nhận không bao giờ giữ con trỏ treo dù thứ tự huỷ thế nào.
@@ -99,6 +107,11 @@ private:
     double m_azRd = 0.0;
     double m_azMh = 0.0;
     bool m_hasAngles = false;
+
+    // Luồng SCN: trạng thái phiên TCP với PC và gói Cf mới nhất PC gửi đến.
+    ScnText::Status m_scnStatus;
+    QString m_scnLastCf;
+    quint32 m_scnCfCount = 0;
 
     QVariantAnimation *m_panelAnim = nullptr;
     int m_savedPanelWidth = 320;

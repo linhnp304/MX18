@@ -22,22 +22,55 @@ struct DefaultRow {
     quint16 localPort;
     const char *remoteIp;
     quint16 remotePort;
+    int format;
 };
 
-// 9 dòng của docs/step-02.md cộng thêm Data-RAW của giai đoạn 3; không cho
-// thêm/xoá dòng trên giao diện.
+// 9 dòng của docs/step-02.md, Data-RAW của giai đoạn 3 và hai dòng UDP của luồng
+// SCN (giai đoạn 5 chốt, analysis-results file 04 mục 2); không cho thêm/xoá
+// dòng trên giao diện.
 const DefaultRow kDefaultRows[] = {
-    {"Video-R",      LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26801, "0.0.0.0",         0},
-    {"Video-I",      LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26802, "0.0.0.0",         0},
-    {"Data-Status",  LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26800, "0.0.0.0",         0},
-    {"Data-RAW",     LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ServerOrUnicast,   "192.168.232.154", 24018, "0.0.0.0",         0},
-    {"Cmd-User",     LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26810},
-    {"Cmd-Admin",    LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26811},
-    {"Cmd-RebootMH", LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26911},
-    {"X18-SCN",      LinkEntry::SendRecv, LinkEntry::Tcp, LinkEntry::ServerOrUnicast,   "192.168.232.154", 10555, "0.0.0.0",         0},
-    {"X18-VQ",       LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ServerOrUnicast,   "192.173.53.168",  10790, "192.173.53.69",   10770},
-    {"SCH-VQ",       LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ServerOrUnicast,   "192.173.53.168",  10770, "192.173.53.68",   10790},
+    {"Video-R",      LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26801, "0.0.0.0",         0,     LinkEntry::Dataframe},
+    {"Video-I",      LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26802, "0.0.0.0",         0,     LinkEntry::Dataframe},
+    {"Data-Status",  LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26800, "0.0.0.0",         0,     LinkEntry::Dataframe},
+    {"Data-RAW",     LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ServerOrUnicast,   "192.168.232.154", 24018, "0.0.0.0",         0,     LinkEntry::RawIq},
+    {"Cmd-User",     LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26810, LinkEntry::Dataframe},
+    {"Cmd-Admin",    LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26811, LinkEntry::Dataframe},
+    {"Cmd-RebootMH", LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26911, LinkEntry::Dataframe},
+    {"X18-SCN",      LinkEntry::SendRecv, LinkEntry::Tcp, LinkEntry::ServerOrUnicast,   "192.168.232.154", 10555, "0.0.0.0",         0,     LinkEntry::ScnText},
+    {"X18-SCN-R",    LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ServerOrUnicast,   "192.168.232.154", 10597, "0.0.0.0",         0,     LinkEntry::ScnCf},
+    {"X18-SCN-S",    LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ServerOrUnicast,   "192.168.232.154",     0, "192.168.232.1",   10613, LinkEntry::ScnCf},
+    {"X18-VQ",       LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ServerOrUnicast,   "192.173.53.168",  10790, "192.173.53.69",   10770, LinkEntry::Asterix},
+    {"SCH-VQ",       LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ServerOrUnicast,   "192.173.53.168",  10770, "192.173.53.68",   10790, LinkEntry::Asterix},
 };
+
+const char *const kFormatNames[LinkEntry::FormatCount] = {
+    "dataframe", "raw_iq", "scn_text", "scn_cf", "asterix",
+};
+
+LinkEntry entryFrom(const DefaultRow &r)
+{
+    LinkEntry e;
+    e.category = QString::fromLatin1(r.category);
+    e.direction = r.direction;
+    e.protocol = r.protocol;
+    e.type = r.type;
+    e.localIp = QString::fromLatin1(r.localIp);
+    e.localPort = r.localPort;
+    e.remoteIp = QString::fromLatin1(r.remoteIp);
+    e.remotePort = r.remotePort;
+    e.format = r.format;
+    e.bigEndian = LinkEntry::defaultBigEndian(r.format);
+    return e;
+}
+
+int indexOf(const QVector<LinkEntry> &entries, const QString &category)
+{
+    for (int i = 0; i < entries.size(); ++i) {
+        if (entries.at(i).category.compare(category, Qt::CaseInsensitive) == 0)
+            return i;
+    }
+    return -1;
+}
 
 quint16 portFrom(const QJsonObject &o, const QString &key)
 {
@@ -47,21 +80,36 @@ quint16 portFrom(const QJsonObject &o, const QString &key)
 
 } // namespace
 
+QString LinkEntry::formatName(int format)
+{
+    if (format < 0 || format >= FormatCount)
+        return QString();
+    return QString::fromLatin1(kFormatNames[format]);
+}
+
+int LinkEntry::formatFromName(const QString &name)
+{
+    for (int f = 0; f < FormatCount; ++f) {
+        if (name.compare(QLatin1String(kFormatNames[f]), Qt::CaseInsensitive) == 0)
+            return f;
+    }
+    return -1;
+}
+
+int LinkEntry::defaultFormat(const QString &category)
+{
+    for (const DefaultRow &r : kDefaultRows) {
+        if (category.compare(QLatin1String(r.category), Qt::CaseInsensitive) == 0)
+            return r.format;
+    }
+    return Dataframe;
+}
+
 LinkConfig LinkConfig::defaults()
 {
     LinkConfig cfg;
-    for (const DefaultRow &r : kDefaultRows) {
-        LinkEntry e;
-        e.category = QString::fromLatin1(r.category);
-        e.direction = r.direction;
-        e.protocol = r.protocol;
-        e.type = r.type;
-        e.localIp = QString::fromLatin1(r.localIp);
-        e.localPort = r.localPort;
-        e.remoteIp = QString::fromLatin1(r.remoteIp);
-        e.remotePort = r.remotePort;
-        cfg.entries.append(e);
-    }
+    for (const DefaultRow &r : kDefaultRows)
+        cfg.entries.append(entryFrom(r));
     return cfg;
 }
 
@@ -73,7 +121,7 @@ QStringList LinkConfig::categoryNames()
     return names;
 }
 
-LinkConfig LinkConfig::load(QString *error)
+LinkConfig LinkConfig::load(QString *error, QString *note)
 {
     const QString path = AppPaths::settingsFile(QString::fromLatin1(kConnectFile));
 
@@ -92,9 +140,15 @@ LinkConfig LinkConfig::load(QString *error)
         return defaults();
     }
 
-    LinkConfig cfg;
-    cfg.bigEndian = JsonFile::b(root, QStringLiteral("big_endian"), true);
+    // File của giai đoạn 2–5 có một khoá big_endian chung cho mọi dòng. Dòng của
+    // hệ thống MH giữ đúng giá trị đó; các dòng X18-* trước đây không chạy được
+    // nên lấy thẳng mặc định của định dạng.
+    const bool legacyKey = root.contains(QStringLiteral("big_endian"));
+    const bool legacyBigEndian = JsonFile::b(root, QStringLiteral("big_endian"), true);
+    bool migrate = legacyKey;
+    QStringList errors;
 
+    LinkConfig cfg;
     const QJsonArray arr = root.value(QStringLiteral("links")).toArray();
     for (const QJsonValue &v : arr) {
         const QJsonObject o = v.toObject();
@@ -109,6 +163,30 @@ LinkConfig LinkConfig::load(QString *error)
         e.localPort = portFrom(o, QStringLiteral("local_port"));
         e.remoteIp = JsonFile::str(o, QStringLiteral("remote_ip"), QStringLiteral("0.0.0.0"));
         e.remotePort = portFrom(o, QStringLiteral("remote_port"));
+
+        e.format = LinkEntry::defaultFormat(e.category);
+        if (o.contains(QStringLiteral("format"))) {
+            const QString name = JsonFile::str(o, QStringLiteral("format"), QString());
+            const int f = LinkEntry::formatFromName(name);
+            if (f >= 0) {
+                e.format = f;
+            } else {
+                errors << QStringLiteral("connect.json, dòng \"%1\": định dạng \"%2\" không có, "
+                                         "dùng \"%3\". Định dạng hợp lệ: %4.")
+                              .arg(e.category, name, LinkEntry::formatName(e.format),
+                                   QStringLiteral("dataframe, raw_iq, scn_text, scn_cf, asterix"));
+            }
+        } else {
+            migrate = true;
+        }
+
+        if (o.contains(QStringLiteral("big_endian"))) {
+            e.bigEndian = JsonFile::b(o, QStringLiteral("big_endian"), true);
+        } else {
+            const bool mhLine = (e.format == LinkEntry::Dataframe || e.format == LinkEntry::RawIq);
+            e.bigEndian = mhLine ? legacyBigEndian : LinkEntry::defaultBigEndian(e.format);
+            migrate = true;
+        }
         cfg.entries.append(e);
     }
 
@@ -118,6 +196,35 @@ LinkConfig LinkConfig::load(QString *error)
                          .arg(path);
         return defaults();
     }
+
+    // Bản cũ chưa có hai dòng UDP của luồng SCN: chèn vào ngay sau dòng đứng
+    // trước nó trong bảng mặc định để tab Connect vẫn xếp theo nhóm.
+    QStringList added;
+    const int rowCount = int(sizeof(kDefaultRows) / sizeof(kDefaultRows[0]));
+    for (int i = 0; i < rowCount; ++i) {
+        const QString name = QString::fromLatin1(kDefaultRows[i].category);
+        if (indexOf(cfg.entries, name) >= 0)
+            continue;
+        const int prev = i > 0 ? indexOf(cfg.entries, QString::fromLatin1(kDefaultRows[i - 1].category))
+                               : -1;
+        cfg.entries.insert(prev >= 0 ? prev + 1 : cfg.entries.size(), entryFrom(kDefaultRows[i]));
+        added << name;
+    }
+
+    if (migrate || !added.isEmpty()) {
+        cfg.save();
+        if (note) {
+            QStringList parts;
+            if (migrate)
+                parts << QStringLiteral("thêm định dạng và thứ tự byte cho từng dòng");
+            if (!added.isEmpty())
+                parts << QStringLiteral("bổ sung dòng %1").arg(added.join(QStringLiteral(", ")));
+            *note = QStringLiteral("Đã cập nhật settings/connect.json: %1.")
+                        .arg(parts.join(QStringLiteral("; ")));
+        }
+    }
+    if (error && !errors.isEmpty())
+        *error = errors.join(QLatin1Char('\n'));
     return cfg;
 }
 
@@ -134,11 +241,12 @@ bool LinkConfig::save() const
         o[QStringLiteral("local_port")] = int(e.localPort);
         o[QStringLiteral("remote_ip")] = e.remoteIp;
         o[QStringLiteral("remote_port")] = int(e.remotePort);
+        o[QStringLiteral("format")] = LinkEntry::formatName(e.format);
+        o[QStringLiteral("big_endian")] = e.bigEndian;
         arr.append(o);
     }
 
     QJsonObject root;
-    root[QStringLiteral("big_endian")] = bigEndian;
     root[QStringLiteral("links")] = arr;
     return JsonFile::write(AppPaths::settingsFile(QString::fromLatin1(kConnectFile)), root);
 }
@@ -150,4 +258,10 @@ const LinkEntry *LinkConfig::find(const QString &category) const
             return &e;
     }
     return nullptr;
+}
+
+bool LinkConfig::bigEndianFor(const QString &category) const
+{
+    const LinkEntry *e = find(category);
+    return e ? e->bigEndian : true;
 }

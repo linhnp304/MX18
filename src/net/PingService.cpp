@@ -1,5 +1,6 @@
 #include "net/PingService.h"
 
+#include <QElapsedTimer>
 #include <QProcess>
 #include <QThread>
 #include <QTimer>
@@ -11,7 +12,7 @@ namespace {
 constexpr int kPeriodMs = 3000;
 constexpr int kNodesPerThread = 3;
 
-bool pingOnce(const QString &address)
+bool pingOnce(const QString &address, const std::atomic_bool &stop)
 {
 #if defined(Q_OS_WIN)
     const QStringList args{QStringLiteral("-n"), QStringLiteral("1"),
@@ -28,10 +29,19 @@ bool pingOnce(const QString &address)
     proc.start(QStringLiteral("ping"), args);
     if (!proc.waitForStarted(2000))
         return false;
-    if (!proc.waitForFinished(5000)) {
-        proc.kill();
-        proc.waitForFinished(500);
-        return false;
+    // Chờ từng nhịp ngắn để lệnh dừng không phải đợi hết lần ping. Trước đây
+    // stop() chờ 3 giây rồi terminate() luồng — đúng bằng một nhịp 3 nút không
+    // trả lời — và luồng bị giết giữa lúc chờ tiến trình làm hỏng bộ nhớ
+    // ("stack smashing" khi thoát phần mềm).
+    QElapsedTimer clock;
+    clock.start();
+    while (proc.state() != QProcess::NotRunning) {
+        if (stop.load() || clock.elapsed() > 5000) {
+            proc.kill();
+            proc.waitForFinished(500);
+            return false;
+        }
+        proc.waitForFinished(50);
     }
     return proc.exitStatus() == QProcess::NormalExit && proc.exitCode() == 0;
 }
@@ -62,8 +72,11 @@ void PingWorker::finish()
 
 void PingWorker::tick()
 {
-    for (int i = 0; i < m_indices.size(); ++i)
-        emit nodeState(m_indices.at(i), pingOnce(m_addresses.at(i)));
+    for (int i = 0; i < m_indices.size() && !m_stop.load(); ++i) {
+        const bool alive = pingOnce(m_addresses.at(i), m_stop);
+        if (!m_stop.load())
+            emit nodeState(m_indices.at(i), alive);
+    }
 }
 
 PingService::PingService(QObject *parent)
@@ -100,20 +113,26 @@ void PingService::start(const QVector<NetNode> &nodes)
         connect(worker, &PingWorker::nodeState, this, &PingService::onNodeState,
                 Qt::QueuedConnection);
         m_threads.append(thread);
+        m_workers.append(worker);
         thread->start();
     }
 }
 
 void PingService::stop()
 {
+    // Báo dừng cho mọi luồng trước rồi mới chờ, để các lần ping đang dở cùng
+    // huỷ một lúc thay vì lần lượt.
+    for (PingWorker *w : std::as_const(m_workers))
+        w->requestStop();
     for (QThread *t : std::as_const(m_threads)) {
         t->quit();
-        // Một lần ping có thể kéo dài tới ~1 giây; chờ đủ lâu để luồng thoát sạch.
-        if (!t->wait(3000))
-            t->terminate();
-        t->deleteLater();
+        // Không terminate(): luồng tự thoát trong vòng ~50 ms sau requestStop().
+        t->wait();
+        delete t;
     }
     m_threads.clear();
+    // Worker tự huỷ trên luồng của nó khi luồng kết thúc (deleteLater).
+    m_workers.clear();
 }
 
 bool PingService::isAlive(int index) const

@@ -67,6 +67,17 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
 - Bỏ chọn **Start/Stop** là đứng hình để soi số liệu: di chuột trên đồ thị hiện
   giá trị hai đường tại điểm đó.
 
+**Giai đoạn 6** (đang làm) — luồng thông tin với máy "PC", P18M và VQ, quỹ đạo:
+
+- `connect.json` ghi **định dạng gói** (`format`) và **thứ tự byte**
+  (`big_endian`) cho từng dòng; tab "Connect" hiện hai cột này nhưng không cho
+  sửa. File của bản cũ được tự chuyển sang dạng mới và bổ sung các dòng còn thiếu.
+- **X18-SCN** (TCP Server 10555): MX18 đóng vai thiết bị SCN cho máy "PC" — gửi
+  khối Start, trả lời lệnh và keepalive, mỗi lúc một PC.
+- **X18-SCN-R / X18-SCN-S** (UDP, gói nhị phân "Cf" little-endian): giải mã gói
+  PC gửi đến; chiều gửi chuẩn bị cho điểm dấu MH.
+- Cửa sổ **"Trạng thái SCN"** (panel 3) tạm hiện trạng thái phiên làm việc với PC.
+
 ## Yêu cầu biên dịch
 
 | | Windows | Ubuntu |
@@ -142,7 +153,7 @@ MX18(.exe)
 | `swinfo.json` | `info_line0` (chữ trên màn hình giới thiệu), `info_line1`/`info_line2` (ô thông tin phần mềm góc trên bên trái panel 1) |
 | `setups.json` | Toàn bộ lựa chọn trong tab "Cài đặt", bảng màu và toạ độ tâm đài |
 | `checkip.json` | Danh sách nút mạng cần ping: `name`, `address`, `kind` (0 không cảnh báo, 1 cảnh báo, 2 báo lỗi) |
-| `connect.json` | Bảng cổng gửi/nhận cho từng loại dữ liệu, và `big_endian` (thứ tự byte của gói tin) |
+| `connect.json` | Bảng cổng gửi/nhận cho từng loại dữ liệu; mỗi dòng có `format` (`dataframe`, `raw_iq`, `scn_text`, `scn_cf`, `asterix`) và `big_endian` — hai khoá này chỉ sửa trong file |
 | `setupadmin.json` | Thiết lập cửa sổ mức kỹ sư: mật khẩu (mặc định `X18`). Ô "Khóa điều khiển" không lưu — mỗi lần mở cửa sổ đều khoá sẵn |
 | `statuserror.json` | Ngưỡng báo lỗi của cửa sổ "Trạng thái MH": `Min50V`, `Max50V`, `Min5V`, `Max5V`, `MinCs`, `MaxT`, `MaxH` |
 | `params.json` | Tham số đài (để dành cho giai đoạn sau; bảng tham số của tab "Params" lấy trực tiếp từ gói `STATUS_PARAMS`) |
@@ -167,7 +178,9 @@ phải chạy lại phần mềm.
   để đổi màu theo trạng thái và không phụ thuộc file ảnh.
 - **Gói tin**: khung cố định 24 byte (`header`, `category`, `length`, `serial`,
   `time`, `checksum`) bọc quanh `data_fields[]`, mỗi trường 4 byte. Thứ tự byte
-  mặc định **big-endian**, đổi được bằng khoá `big_endian` trong `connect.json`.
+  mặc định **big-endian**, đổi được bằng khoá `big_endian` của từng dòng trong
+  `connect.json`. Các luồng X18-* không theo khung này: ASTERIX luôn big-endian,
+  gói "Cf" của SCN luôn little-endian.
   `checksum` hiện gán 0 và chưa kiểm tra.
 - **Video**: đường quét MH đến khoảng 400 gói/giây. Mỗi tia được vẽ bằng một
   phép biến đổi quay + giãn của một ảnh 600×1 điểm — rẻ hơn nhiều so với 600 đoạn
@@ -178,4 +191,4 @@ phải chạy lại phần mềm.
   nhận của cổng `Data-RAW` rồi chỉ giữ phần cần vẽ (ViewIQ: gói mới nhất; Vẽ CS:
   một cặp Sum/Sub cho mỗi phương vị encoder); cửa sổ lấy bản chụp ở nhịp 25
   hình/giây. Giao diện vẽ không kịp thì gói bị gói sau đè lên chứ bộ nhớ không
-  phình ra. Thứ tự byte theo khoá `big_endian` chung.
+  phình ra. Thứ tự byte theo khoá `big_endian` của dòng `Data-RAW`.

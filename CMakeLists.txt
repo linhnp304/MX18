@@ -50,6 +50,8 @@ set(MX18_SOURCES
     src/net/DataLink.h
     src/net/RawIqStore.cpp
     src/net/RawIqStore.h
+    src/net/ScnTextSession.cpp
+    src/net/ScnTextSession.h
 
     src/proto/Dataframe.cpp
     src/proto/Dataframe.h
@@ -57,6 +59,10 @@ set(MX18_SOURCES
     src/proto/Packets.h
     src/proto/RawIq.cpp
     src/proto/RawIq.h
+    src/proto/ScnCf.cpp
+    src/proto/ScnCf.h
+    src/proto/ScnText.cpp
+    src/proto/ScnText.h
 
     src/ui/Theme.cpp
     src/ui/Theme.h

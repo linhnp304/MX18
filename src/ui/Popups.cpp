@@ -200,9 +200,20 @@ PlaceholderPopup::PlaceholderPopup(const QString &title, const QString &note, QW
 {
     auto *lay = new QVBoxLayout(body());
     lay->setContentsMargins(14, 14, 14, 14);
-    auto *lbl = new QLabel(note, body());
-    lbl->setAlignment(Qt::AlignCenter);
-    lbl->setStyleSheet(QStringLiteral("color:#5d666f;font-style:italic;"));
-    lbl->setMinimumSize(260, 90);
-    lay->addWidget(lbl);
+    m_label = new QLabel(note, body());
+    m_label->setAlignment(Qt::AlignCenter);
+    m_label->setStyleSheet(QStringLiteral("color:#5d666f;font-style:italic;"));
+    m_label->setMinimumSize(260, 90);
+    lay->addWidget(m_label);
+}
+
+void PlaceholderPopup::setNote(const QString &note, bool plain)
+{
+    m_label->setText(note);
+    // Dòng "Gói gần nhất" có thể rất dài: gấp dòng để popup không bè ra che bản đồ.
+    m_label->setWordWrap(plain);
+    m_label->setFixedWidth(plain ? 420 : m_label->minimumWidth());
+    m_label->setAlignment(plain ? (Qt::AlignLeft | Qt::AlignVCenter) : Qt::AlignCenter);
+    m_label->setStyleSheet(plain ? QString() : QStringLiteral("color:#5d666f;font-style:italic;"));
+    adjustSize();
 }

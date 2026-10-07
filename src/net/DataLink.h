@@ -1,6 +1,8 @@
 #pragma once
 
 #include "net/LinkConfig.h"
+#include "proto/ScnCf.h"
+#include "proto/ScnText.h"
 
 #include <QByteArray>
 #include <QHash>
@@ -15,6 +17,7 @@ class QTcpSocket;
 class QThread;
 class QTimer;
 class QUdpSocket;
+class ScnTextSession;
 
 // Nơi nhận gói thô không theo khung Dataframe (RAW_IQ của dòng "Data-RAW").
 //
@@ -38,12 +41,19 @@ public:
 // giao diện thì một lần vẽ lại bản đồ cũng đủ làm rơi gói. Vì vậy mỗi dòng trong
 // connect.json có một luồng riêng, chỉ kết quả đã mở gói mới đi qua hàng đợi tín
 // hiệu về luồng giao diện.
+//
+// Cách cắt gói và giải mã theo khoá "format" của dòng:
+//   dataframe — khung Dataframe quy ước (TCP cắt theo trường length)
+//   raw_iq    — gói cỡ cố định, đưa thẳng vào RawSink trên luồng này
+//   scn_text  — TCP Server một PC, mỗi dòng một lệnh (ScnTextSession)
+//   scn_cf    — mỗi datagram một gói "Cf"; dòng gửi phát byte "0" lúc mở
+//   asterix   — mỗi datagram một hay nhiều khối ASTERIX
 class LinkWorker : public QObject
 {
     Q_OBJECT
 public:
-    // rawSink khác null: cổng này nhận gói thô, không mở khung Dataframe.
-    LinkWorker(const LinkEntry &entry, bool bigEndian, std::shared_ptr<RawSink> rawSink = {});
+    // rawSink chỉ dùng khi định dạng của dòng là raw_iq.
+    explicit LinkWorker(const LinkEntry &entry, std::shared_ptr<RawSink> rawSink = {});
     ~LinkWorker() override;
 
 public slots:
@@ -51,12 +61,15 @@ public slots:
     void finish();
     void sendFrame(quint32 category, const QByteArray &data);
     // Gửi nguyên xi một chuỗi byte, không đóng khung gói tin (lệnh khởi động
-    // lại hệ thống MH chỉ có 4 byte và không theo Dataframe).
+    // lại hệ thống MH chỉ có 4 byte và không theo Dataframe; gói ASTERIX, "Cf").
     void sendRawBytes(const QByteArray &raw);
 
 signals:
     // serial là trường của khung gói tin, cửa sổ "Trạng thái MH" hiển thị nó.
-    void frameReceived(quint32 category, quint32 serial, const QByteArray &data);
+    // bigEndian là thứ tự byte của dòng nhận, lớp gọi mở các trường theo nó.
+    void frameReceived(quint32 category, quint32 serial, const QByteArray &data, bool bigEndian);
+    void scnStatus(const ScnText::Status &status);
+    void scnCfReceived(const ScnCf::Message &message);
     // Gửi xong một gói lệnh: các tab mức kỹ sư hiện serial vừa gửi.
     void frameSent(quint32 category, quint32 serial);
     void message(const QString &text, bool isError);
@@ -66,12 +79,18 @@ private slots:
     void acceptTcp();
     void readTcp();
     void reconnectTcp();
+    void acceptScn();
+    void endScnSession();
 
 private:
     void openUdp();
     void openTcpServer();
     void openTcpClient();
     void handleRaw(const QByteArray &raw);
+    void handleDatagram(const QByteArray &raw);
+    // Báo lỗi giải mã một lần mỗi lần mở cổng: gói hỏng thường lặp lại đều đặn,
+    // báo từng gói chỉ làm ngập bảng thông báo.
+    void warnDecodeOnce(const QString &text);
     // false khi không đọc được datagram nào nữa (vòng đọc phải dừng).
     bool readRawDatagram();
     void checkRawSize(qint64 size);
@@ -82,13 +101,16 @@ private:
 
     LinkEntry m_entry;
     bool m_bigEndian;
+    int m_format;
     quint32 m_serial = 0;
+    bool m_decodeWarned = false;
 
     QUdpSocket *m_udp = nullptr;
     QTcpServer *m_server = nullptr;
     QTcpSocket *m_client = nullptr;          // chỉ dùng khi TCP Client
     QTimer *m_retry = nullptr;
     QHash<QTcpSocket *, QByteArray> m_tcpBuffers;
+    ScnTextSession *m_scn = nullptr;         // scn_text: PC đang kết nối
 
     QHostAddress m_remoteAddr;
     QHostAddress m_localAddr;
@@ -120,14 +142,16 @@ public:
     bool send(const QString &category, quint32 packetCategory, const QByteArray &data);
     bool sendRaw(const QString &category, const QByteArray &raw);
 
-    // Gói nhận trên dòng mang tên phân loại này đi thẳng vào sink, không mở
-    // khung Dataframe. Có tác dụng từ lần start() kế tiếp.
+    // Gói nhận trên dòng mang tên phân loại này (định dạng raw_iq) đi thẳng vào
+    // sink, không mở khung Dataframe. Có tác dụng từ lần start() kế tiếp.
     void setRawSink(const QString &category, std::shared_ptr<RawSink> sink);
 
 signals:
-    void frameReceived(quint32 category, quint32 serial, const QByteArray &data);
+    void frameReceived(quint32 category, quint32 serial, const QByteArray &data, bool bigEndian);
     void frameSent(quint32 category, quint32 serial);
     void message(const QString &text, bool isError);
+    void scnStatus(const ScnText::Status &status);
+    void scnCfReceived(const ScnCf::Message &message);
 
 private:
     LinkConfig m_config;

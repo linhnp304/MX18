@@ -1,5 +1,6 @@
 #include "net/DataLink.h"
 
+#include "net/ScnTextSession.h"
 #include "proto/Dataframe.h"
 
 #include <QNetworkDatagram>
@@ -40,10 +41,11 @@ QString describe(const LinkEntry &e)
 
 // ------------------------------------------------------------------ worker
 
-LinkWorker::LinkWorker(const LinkEntry &entry, bool bigEndian, std::shared_ptr<RawSink> rawSink)
+LinkWorker::LinkWorker(const LinkEntry &entry, std::shared_ptr<RawSink> rawSink)
     : m_entry(entry)
-    , m_bigEndian(bigEndian)
-    , m_rawSink(std::move(rawSink))
+    , m_bigEndian(entry.bigEndian)
+    , m_format(entry.format)
+    , m_rawSink(entry.format == LinkEntry::RawIq ? std::move(rawSink) : nullptr)
 {
     m_remoteAddr = QHostAddress(m_entry.remoteIp);
     m_localAddr = QHostAddress(m_entry.localIp);
@@ -53,6 +55,17 @@ LinkWorker::~LinkWorker() = default;
 
 void LinkWorker::begin()
 {
+    if (m_format == LinkEntry::RawIq && !m_rawSink) {
+        emit message(QStringLiteral("%1: định dạng raw_iq chỉ dùng được cho dòng Data-RAW, "
+                                    "gói nhận được sẽ bị bỏ.").arg(m_entry.category), true);
+    }
+    if (m_format == LinkEntry::ScnText
+        && (m_entry.protocol != LinkEntry::Tcp || m_entry.type != LinkEntry::ServerOrUnicast)) {
+        // MX18 đóng vai thiết bị SCN nên luôn là bên chờ PC kết nối vào.
+        emit message(QStringLiteral("%1: định dạng scn_text chỉ chạy ở TCP Server, dòng này "
+                                    "không mở.").arg(m_entry.category), true);
+        return;
+    }
     if (m_entry.protocol == LinkEntry::Tcp) {
         if (m_entry.type == LinkEntry::ServerOrUnicast)
             openTcpServer();
@@ -65,6 +78,10 @@ void LinkWorker::begin()
 
 void LinkWorker::finish()
 {
+    if (m_scn) {
+        delete m_scn;
+        m_scn = nullptr;
+    }
     if (m_retry) {
         m_retry->stop();
         delete m_retry;
@@ -102,6 +119,10 @@ void LinkWorker::openUdp()
             emit message(QStringLiteral("Không mở được cổng gửi %1: %2")
                              .arg(describe(m_entry), m_udp->errorString()), true);
         }
+        // SW1 gửi byte "0" cho PC ngay khi mở luồng UDP; giữ lại vì vô hại và PC
+        // có thể dựa vào nó để biết SCN đã sẵn sàng.
+        if (m_format == LinkEntry::ScnCf)
+            writeOut(ScnCf::helloBytes());
         return;
     }
 
@@ -147,7 +168,53 @@ void LinkWorker::openTcpServer()
                          .arg(describe(m_entry), m_server->errorString()), true);
         return;
     }
+    if (m_format == LinkEntry::ScnText) {
+        connect(m_server, &QTcpServer::newConnection, this, &LinkWorker::acceptScn);
+        ScnText::Status st;
+        st.listening = true;
+        emit scnStatus(st);
+        return;
+    }
     connect(m_server, &QTcpServer::newConnection, this, &LinkWorker::acceptTcp);
+}
+
+void LinkWorker::acceptScn()
+{
+    if (m_scn || !m_server || !m_server->hasPendingConnections())
+        return;
+    QTcpSocket *s = m_server->nextPendingConnection();
+    // Một PC tại một thời điểm (anh Linh chốt): ngừng nhận để PC thứ hai nằm chờ
+    // trong hàng đợi của hệ điều hành, giống SW1, cho tới khi PC đầu ngắt.
+    m_server->pauseAccepting();
+    m_scn = new ScnTextSession(s, this);
+    connect(m_scn, &ScnTextSession::statusChanged, this, &LinkWorker::scnStatus);
+    connect(m_scn, &ScnTextSession::unknownCommand, this, [this](const QString &line) {
+        emit message(QStringLiteral("%1: PC gửi lệnh lạ, không trả lời: %2")
+                         .arg(m_entry.category, line), false);
+    });
+    connect(m_scn, &ScnTextSession::finished, this, &LinkWorker::endScnSession);
+    emit message(QStringLiteral("%1: PC %2 đã kết nối.")
+                     .arg(m_entry.category, m_scn->status().peer), false);
+    emit scnStatus(m_scn->status());
+}
+
+void LinkWorker::endScnSession()
+{
+    if (!m_scn)
+        return;
+    emit message(QStringLiteral("%1: PC %2 đã ngắt kết nối, chờ kết nối lại.")
+                     .arg(m_entry.category, m_scn->status().peer), false);
+    m_scn->deleteLater();
+    m_scn = nullptr;
+
+    ScnText::Status st;
+    st.listening = true;
+    emit scnStatus(st);
+
+    if (m_server) {
+        m_server->resumeAccepting();
+        acceptScn();
+    }
 }
 
 void LinkWorker::openTcpClient()
@@ -216,8 +283,39 @@ void LinkWorker::readUdp()
         const QNetworkDatagram dg = m_udp->receiveDatagram();
         if (!senderAllowed(dg.senderAddress(), quint16(dg.senderPort())))
             continue;
-        handleRaw(dg.data());
+        handleDatagram(dg.data());
     }
+}
+
+void LinkWorker::handleDatagram(const QByteArray &raw)
+{
+    switch (m_format) {
+    case LinkEntry::Dataframe:
+        handleRaw(raw);
+        return;
+    case LinkEntry::ScnCf: {
+        ScnCf::Message msg;
+        QString error;
+        if (ScnCf::decode(raw, &msg, &error))
+            emit scnCfReceived(msg);
+        else
+            warnDecodeOnce(QStringLiteral("gói Cf hỏng (%1)").arg(error));
+        return;
+    }
+    default:
+        // raw_iq thiếu nơi nhận (đã báo lúc mở cổng); scn_text không đi trên
+        // UDP; asterix giải mã ở giai đoạn 6 phiên 2.
+        return;
+    }
+}
+
+void LinkWorker::warnDecodeOnce(const QString &text)
+{
+    if (m_decodeWarned)
+        return;
+    m_decodeWarned = true;
+    emit message(QStringLiteral("%1: %2. Các gói hỏng sau đó bị bỏ, không báo lại.")
+                     .arg(m_entry.category, text), true);
 }
 
 bool LinkWorker::readRawDatagram()
@@ -255,6 +353,11 @@ void LinkWorker::readTcp()
     QByteArray &buf = m_tcpBuffers[socket];
     buf.append(socket->readAll());
 
+    if (m_format != LinkEntry::Dataframe && !m_rawSink) {
+        // Định dạng không cắt được trên dòng TCP này: vứt để bộ đệm không phình.
+        buf.clear();
+        return;
+    }
     if (m_rawSink) {
         // Gói thô không có header để dò đồng bộ, chỉ cắt đúng cỡ liên tiếp.
         const int n = m_rawSink->frameBytes();
@@ -286,7 +389,7 @@ void LinkWorker::handleRaw(const QByteArray &raw)
     Proto::Frame frame;
     if (!Proto::parse(raw, &frame, m_bigEndian))
         return;
-    emit frameReceived(frame.category, frame.serial, frame.data);
+    emit frameReceived(frame.category, frame.serial, frame.data, m_bigEndian);
 }
 
 void LinkWorker::sendFrame(quint32 category, const QByteArray &data)
@@ -314,6 +417,8 @@ bool LinkWorker::writeOut(const QByteArray &raw)
             return false;
         return m_udp->writeDatagram(raw, m_remoteAddr, m_entry.remotePort) == raw.size();
     }
+    if (m_format == LinkEntry::ScnText)
+        return m_scn && m_scn->write(raw);
     if (m_client && m_client->state() == QAbstractSocket::ConnectedState)
         return m_client->write(raw) == raw.size();
 
@@ -330,6 +435,9 @@ bool LinkWorker::writeOut(const QByteArray &raw)
 LinkManager::LinkManager(QObject *parent)
     : QObject(parent)
 {
+    // Hai kiểu này đi qua hàng đợi tín hiệu từ luồng của cổng về luồng giao diện.
+    qRegisterMetaType<ScnText::Status>();
+    qRegisterMetaType<ScnCf::Message>();
 }
 
 LinkManager::~LinkManager()
@@ -346,7 +454,7 @@ void LinkManager::start()
         auto *thread = new QThread(this);
         thread->setObjectName(QStringLiteral("link-%1").arg(entry.category));
 
-        auto *worker = new LinkWorker(entry, m_config.bigEndian, m_rawSinks.value(entry.category));
+        auto *worker = new LinkWorker(entry, m_rawSinks.value(entry.category));
         worker->moveToThread(thread);
 
         connect(thread, &QThread::started, worker, &LinkWorker::begin);
@@ -354,6 +462,8 @@ void LinkManager::start()
         connect(worker, &LinkWorker::frameReceived, this, &LinkManager::frameReceived);
         connect(worker, &LinkWorker::frameSent, this, &LinkManager::frameSent);
         connect(worker, &LinkWorker::message, this, &LinkManager::message);
+        connect(worker, &LinkWorker::scnStatus, this, &LinkManager::scnStatus);
+        connect(worker, &LinkWorker::scnCfReceived, this, &LinkManager::scnCfReceived);
 
         m_threads.append(thread);
         m_workers.append(worker);

@@ -5,6 +5,8 @@
 #include <QObject>
 #include <QVector>
 
+#include <atomic>
+
 class QThread;
 
 // Kiểm tra kết nối tới các nút mạng bằng lệnh ping của hệ điều hành.
@@ -17,6 +19,9 @@ class PingWorker : public QObject
     Q_OBJECT
 public:
     PingWorker(const QVector<int> &indices, const QVector<QString> &addresses, int periodMs);
+
+    // Gọi từ luồng giao diện: lần ping đang chạy dừng ngay, luồng tự thoát.
+    void requestStop() { m_stop = true; }
 
 public slots:
     void begin();
@@ -33,6 +38,7 @@ private:
     QVector<QString> m_addresses;
     int m_periodMs;
     class QTimer *m_timer = nullptr;
+    std::atomic_bool m_stop{false};
 };
 
 class PingService : public QObject
@@ -60,5 +66,6 @@ private:
     QVector<bool> m_alive;
     QVector<bool> m_known;
     QVector<QThread *> m_threads;
+    QVector<PingWorker *> m_workers;
     int m_lastLevel = -1;
 };
