@@ -67,7 +67,7 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
 - Bỏ chọn **Start/Stop** là đứng hình để soi số liệu: di chuột trên đồ thị hiện
   giá trị hai đường tại điểm đó.
 
-**Giai đoạn 6** (đang làm) — luồng thông tin với máy "PC", P18M và VQ, quỹ đạo:
+**Giai đoạn 6** — luồng thông tin với máy "PC", P18M và VQ, quỹ đạo:
 
 - `connect.json` ghi **định dạng gói** (`format`) và **thứ tự byte**
   (`big_endian`) cho từng dòng; tab "Connect" hiện hai cột này nhưng không cho
@@ -81,12 +81,25 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
   mỗi datagram, có kiểm tra biên. Bản ghi CAT048 có Track Number đưa vào **danh
   sách quỹ đạo** (gói TRACK `0x2051`): phương vị - cự ly, lat/lng tính từ tâm đài,
   vết suốt đời quỹ đạo; xoá khi P18M gửi bản tin cuối (I048/170 TRE = 1) hoặc khi
-  quá `track_drop_sec` giây (mặc định 40) không có cập nhật.
+  quá "Thời gian xóa quỹ đạo khi không có cập nhật" (mặc định 40 giây).
 - **SCH-VQ** (UDP, ASTERIX gửi VQ): quỹ đạo mỗi lần cập nhật (bản tin cuối TRE = 1
   khi xoá), điểm dấu MH (gói PLOT `0x2031` trên `Data-Status`), North marker và
   Sector crossing theo góc anten của VIDEO_R hoặc VIDEO_I. Time of Day đúng chuẩn
   (giây từ nửa đêm UTC × 128).
-- Gói **ALARM_HEAD** (`0x7720`, hướng báo động) đã có định nghĩa trường.
+- **Panel 1**: quỹ đạo (ký hiệu máy bay xoay theo hướng bay, hai màu theo có/chưa
+  có nhận dạng MH, cỡ theo %), lý lịch, vết dạng điểm / đường, điểm dấu MH (ô vuông
+  kèm ô thông tin), tia báo động ALARM_HEAD (`0x7720`) nhấp nháy hai màu. Bấm trái
+  vào quỹ đạo mở cửa sổ thông tin quỹ đạo; bấm phải mở menu "Theo dõi" / "Xóa" /
+  "Xóa nhận dạng".
+- Tab **"Danh sách"** (bảng quỹ đạo, cột "Theo dõi", nút xoá) và cửa sổ **"Điểm
+  dấu MH"** (nhật ký điểm dấu nhận được).
+- **Hợp nhất** điểm dấu MH vào quỹ đạo X18-VQ (mặc định): cửa sổ ± phương vị / ±
+  cự ly quanh điểm dấu (tab "Thiết lập khác"), nhận dạng giữ suốt đời quỹ đạo.
+- **Khởi tạo và bám quỹ đạo từ điểm dấu MH** (chọn hộp "Khởi tạo quỹ đạo từ điểm
+  dấu MH"; khi đó không hợp nhất): điểm dấu ở 2 vòng quét liên tiếp với vận tốc
+  10–333 m/s thành quỹ đạo, số hiệu từ 3001; vòng nào không có điểm dấu trong cửa
+  sổ dự đoán thì ngoại suy, quá 3 vòng thì xoá. Chu kỳ quét đo theo đường quét
+  VIDEO_I (mặc định 10 giây). Tham số ở các khoá `mh_*` của `setupadmin.json`.
 
 ## Yêu cầu biên dịch
 
@@ -161,7 +174,7 @@ MX18(.exe)
 | File | Nội dung |
 |---|---|
 | `swinfo.json` | `info_line0` (chữ trên màn hình giới thiệu), `info_line1`/`info_line2` (ô thông tin phần mềm góc trên bên trái panel 1) |
-| `setups.json` | Toàn bộ lựa chọn trong tab "Cài đặt", bảng màu và toạ độ tâm đài |
+| `setups.json` | Toàn bộ lựa chọn trong tab "Cài đặt" và cửa sổ "Màu sắc và thiết lập khác" (kể cả `mh_track_init`, cửa sổ hợp nhất), toạ độ tâm đài |
 | `checkip.json` | Danh sách nút mạng cần ping: `name`, `address`, `kind` (0 không cảnh báo, 1 cảnh báo, 2 báo lỗi) |
 | `connect.json` | Bảng cổng gửi/nhận cho từng loại dữ liệu; mỗi dòng có `format` (`dataframe`, `raw_iq`, `scn_text`, `scn_cf`, `asterix`) và `big_endian` — hai khoá này chỉ sửa trong file |
 | `setupadmin.json` | Thiết lập mức kỹ sư: mật khẩu (mặc định `X18`; ô "Khóa điều khiển" không lưu — mỗi lần mở cửa sổ đều khoá sẵn). Các khoá chưa có giao diện, sửa trong file: luồng SCH-VQ `vq_range_change` (2.0 = LSB chuẩn ASTERIX), `vq_output_p18m` (false = SP kiểu ELM-2288), `vq_sac`/`vq_sic` (148/101), `vq_sector_source` (`VIDEO_R`/`VIDEO_I`), `vq_send_tre`, `vq_site_height_m`; bộ bám quỹ đạo từ điểm dấu MH `mh_*` (số vòng khởi tạo, vận tốc giới hạn, số vòng ngoại suy, chu kỳ quét mặc định, cửa sổ dự đoán, số hiệu bắt đầu) |

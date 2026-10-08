@@ -1,7 +1,8 @@
 #pragma once
 
 #include "core/GeoCalc.h"
-#include "proto/Packets.h"
+#include "track/MhTracker.h"
+#include "track/TrackEntry.h"
 
 #include <QElapsedTimer>
 #include <QObject>
@@ -12,34 +13,6 @@ class QTimer;
 namespace Asterix {
 struct Cat048;
 }
-
-// Một vị trí cũ của quỹ đạo (vết lịch sử).
-struct TrackPoint {
-    quint32 azm = 0;       // 0,01 độ
-    quint32 range = 0;     // mét
-};
-
-// Một quỹ đạo trong danh sách: bản ghi theo giao thức TRACK cộng phần chỉ dùng
-// trên máy (vết, thời điểm cập nhật, đang theo dõi).
-struct TrackEntry {
-    quint32 f[Track::Count] = {};
-    // Vết suốt đời quỹ đạo, cũ nhất trước, không gồm vị trí hiện tại. Bao nhiêu
-    // vết được vẽ là việc của lớp hiển thị (tab "Cài đặt", hoặc toàn bộ khi theo dõi).
-    QVector<TrackPoint> history;
-    qint64 updatedMs = 0;  // theo đồng hồ đơn điệu của TrackStore
-    // Time of Day ASTERIX (1/128 s) lúc nhận vị trí hiện tại. Hợp nhất điểm dấu
-    // gửi lại quỹ đạo với vị trí cũ, nên phải kèm đúng giờ của vị trí đó.
-    quint32 positionTod = 0;
-    bool followed = false;
-    // Độ cao radar đo (I048/110) nếu P18M có gửi; TRACK không có trường này
-    // nhưng SCH-VQ cần khi quỹ đạo chưa có độ cao từ nhận dạng MH.
-    double heightM = 0.0;
-
-    quint32 id() const { return f[Track::TrackId]; }
-    quint32 type() const { return f[Track::TrackType]; }
-    double azimuthDeg() const { return f[Track::Azm] / 100.0; }
-    double rangeM() const { return double(f[Track::Range]); }
-};
 
 // Danh sách quỹ đạo, khoá theo track_id, giữ đúng thứ tự xuất hiện (tab "Danh
 // sách" thêm dòng mới ở cuối). Sống trên luồng giao diện: X18-VQ chỉ vài chục
@@ -55,6 +28,7 @@ public:
         RemovedExtrapolated,   // bộ bám MH ngoại suy đủ số vòng
         RemovedDisconnected,   // dừng kết nối: xoá sạch, không báo đi đâu
         RemovedListCleared,    // nút "Xóa danh sách quỹ đạo": như người dùng xoá từng quỹ đạo
+        RemovedTrackerOff,     // bỏ chọn "Khởi tạo quỹ đạo từ điểm dấu MH": xoá quỹ đạo track_type 3
     };
 
     explicit TrackStore(QObject *parent = nullptr);
@@ -72,6 +46,16 @@ public:
     // SCH-VQ) khi nhận dạng hoặc loại quỹ đạo thật sự đổi.
     bool mergePlot(const quint32 *plot, double halfAzDeg, double halfRangeKm, quint32 *mergedId = nullptr);
 
+    // Bộ bám MH (phương án 2, track/MhTracker). Điểm dấu chỉ đưa vào khi "Khởi
+    // tạo quỹ đạo từ điểm dấu MH" đang chọn; đường quét VIDEO_I thì luôn đưa vào
+    // để chu kỳ quét đo sẵn từ trước.
+    void setMhParams(const MhTracker::Params &params) { m_mh.setParams(params); }
+    void applyMhPlot(const quint32 *plot);
+    void mhSweep(double azDeg);
+    // Xoá mọi quỹ đạo track_type 3 cùng các chuỗi chờ khởi tạo, trả về số quỹ đạo.
+    int removeMhTracks(RemoveReason reason);
+    double mhScanPeriodS() const { return m_mh.scanPeriodS(); }
+
     bool remove(quint32 id, RemoveReason reason);
     void removeAll(RemoveReason reason);
     bool setFollowed(quint32 id, bool followed);
@@ -80,10 +64,6 @@ public:
 
     const QVector<TrackEntry> &tracks() const { return m_tracks; }
     const TrackEntry *find(quint32 id) const;
-
-    // Số vết giữ tối đa cho mỗi quỹ đạo (~14 giờ ở 10 giây một vòng quét): đủ
-    // "suốt đời quỹ đạo" mà không để một quỹ đạo kẹt mãi làm phình bộ nhớ.
-    static constexpr int kMaxHistory = 5000;
 
 signals:
     // Dữ liệu mới từ nguồn (X18-VQ, hợp nhất, bộ bám MH): đây là lúc SCH-VQ gửi đi.
@@ -96,10 +76,12 @@ private:
     void expire();
     int indexOf(quint32 id) const;
     void setLatLng(TrackEntry *t) const;
+    void emitMhEvents(const MhTracker::Events &ev);
 
     QVector<TrackEntry> m_tracks;
     LocalProjection m_proj;
     QElapsedTimer m_clock;
     QTimer *m_expireTimer = nullptr;
     qint64 m_dropMs = 40000;
+    MhTracker m_mh;
 };

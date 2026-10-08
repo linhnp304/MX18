@@ -72,6 +72,9 @@ set(MX18_SOURCES
     src/track/VqSender.h
     src/track/PlotMerge.cpp
     src/track/PlotMerge.h
+    src/track/MhTracker.cpp
+    src/track/MhTracker.h
+    src/track/TrackEntry.h
 
     src/ui/Theme.cpp
     src/ui/Theme.h

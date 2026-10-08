@@ -139,6 +139,18 @@ void MainWindow::buildUi()
     m_tracks = new TrackStore(this);
     m_tracks->setCenter(setups.radarLat, setups.radarLon);
     m_tracks->setDropSeconds(setups.trackDropSec);
+    const MhTrackerSetup &mh = Settings::instance().mhTracker();
+    MhTracker::Params mp;
+    mp.initScans = mh.initScans;
+    mp.speedMinMps = mh.speedMinMps;
+    mp.speedMaxMps = mh.speedMaxMps;
+    mp.extrapolateScans = mh.extrapolateScans;
+    mp.scanPeriodS = mh.scanPeriodS;
+    mp.windowAzimuthDeg = mh.windowAzimuthDeg;
+    mp.windowRangeKm = mh.windowRangeKm;
+    mp.trackIdStart = mh.trackIdStart;
+    m_tracks->setMhParams(mp);
+    m_mhTrackInit = setups.mhTrackInit;
     m_mapView->setTrackStore(m_tracks);
     m_controlPanel->trackListTab()->setTrackStore(m_tracks);
     m_vq = new VqSender(this);
@@ -176,6 +188,14 @@ void MainWindow::wireSignals()
         m_mapView->refreshSettings();
         m_tracks->setDropSeconds(Settings::instance().setups().trackDropSec);
         notify(QStringLiteral("Đã áp dụng thiết lập màu sắc và tham số hiển thị."));
+        const bool mhInit = Settings::instance().setups().mhTrackInit;
+        if (mhInit != m_mhTrackInit) {
+            m_mhTrackInit = mhInit;
+            // Quay về phương án 1: quỹ đạo tự bám từ MH không còn ai cập nhật.
+            const int n = mhInit ? 0 : m_tracks->removeMhTracks(TrackStore::RemovedTrackerOff);
+            notify(mhInit ? QStringLiteral("Khởi tạo quỹ đạo từ điểm dấu MH: bật (ngừng hợp nhất điểm dấu MH).")
+                          : QStringLiteral("Khởi tạo quỹ đạo từ điểm dấu MH: tắt, đã xóa %1 quỹ đạo MH.").arg(n));
+        }
     });
 
     ControlTab *ctrl = m_controlPanel->controlTab();
@@ -217,9 +237,12 @@ void MainWindow::wireSignals()
     connect(m_links, &LinkManager::asterixReceived, this, &MainWindow::onAsterix);
 
     connect(m_tracks, &TrackStore::trackUpdated, this, [this](const TrackEntry &t, bool added) {
-        if (added && !m_vqTrackNoted) {
-            m_vqTrackNoted = true;
-            notify(QStringLiteral("X18-VQ: nhận quỹ đạo đầu tiên (Tốp %1, %2° - %3km).")
+        const bool fromMh = (t.type() == Track::TypeMh);
+        bool &noted = fromMh ? m_mhTrackNoted : m_vqTrackNoted;
+        if (added && !noted) {
+            noted = true;
+            notify((fromMh ? QStringLiteral("Khởi tạo quỹ đạo đầu tiên từ điểm dấu MH (Tốp %1, %2° - %3km).")
+                           : QStringLiteral("X18-VQ: nhận quỹ đạo đầu tiên (Tốp %1, %2° - %3km)."))
                        .arg(t.f[Track::TrackTop])
                        .arg(t.azimuthDeg(), 0, 'f', 1)
                        .arg(t.rangeM() / 1000.0, 0, 'f', 1));
@@ -434,6 +457,7 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
         m_azMh = az * Video::kAzimuthLsb;
         m_hasAngles = true;
         m_vq->sweep(VqSender::SweepVideoI, az);
+        m_tracks->mhSweep(m_azMh);
         const QByteArray video = data.mid(4, Video::kSamples);
         m_mapView->setMhSweep(m_azMh, video);
         m_controlPanel->amplitudeView()->setTrace(video);
@@ -530,12 +554,13 @@ void MainWindow::onPlot(const QByteArray &data, bool be)
     m_vq->sendPlot(f);
 
     // Phương án 1: hợp nhất nhận dạng vào quỹ đạo X18-VQ. Đã chọn "Khởi tạo quỹ
-    // đạo từ điểm dấu MH" thì điểm dấu dành cho bộ bám MH, không hợp nhất.
+    // đạo từ điểm dấu MH" (phương án 2) thì điểm dấu dành cho bộ bám MH.
     const Setups &setups = Settings::instance().setups();
     quint32 mergedId = 0;
-    if (!setups.mhTrackInit
-        && m_tracks->mergePlot(f, setups.mergeAzimuthDeg, setups.mergeRangeKm, &mergedId)
-        && !m_mergeNoted) {
+    if (setups.mhTrackInit) {
+        m_tracks->applyMhPlot(f);
+    } else if (m_tracks->mergePlot(f, setups.mergeAzimuthDeg, setups.mergeRangeKm, &mergedId)
+               && !m_mergeNoted) {
         m_mergeNoted = true;
         const TrackEntry *t = m_tracks->find(mergedId);
         notify(QStringLiteral("Hợp nhất điểm dấu MH đầu tiên vào quỹ đạo Tốp %1 (chế độ %2).")
@@ -709,6 +734,7 @@ void MainWindow::setConnected(bool connected)
     m_vqTrackNoted = false;
     m_plotNoted = false;
     m_mergeNoted = false;
+    m_mhTrackNoted = false;
     m_alarmNoted = false;
     m_statusPanel->setPopupState(StatusPanel::ScnStatus, connected ? StatusPanel::Warn : StatusPanel::Idle);
     showScnStatus();

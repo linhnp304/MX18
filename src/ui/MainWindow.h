@@ -118,7 +118,11 @@ private:
     bool m_vqTrackNoted = false;
     bool m_plotNoted = false;
     bool m_mergeNoted = false;
+    bool m_mhTrackNoted = false;
     bool m_alarmNoted = false;
+    // Trạng thái hộp "Khởi tạo quỹ đạo từ điểm dấu MH" lần áp dụng trước: bỏ
+    // chọn thì phải xoá các quỹ đạo track_type 3.
+    bool m_mhTrackInit = false;
     quint32 m_scnPlotsSent = 0;
 
     // Góc quét đến 400 lần/giây cho mỗi loại; thanh trạng thái chỉ cần 10 lần.

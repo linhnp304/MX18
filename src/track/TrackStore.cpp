@@ -115,11 +115,8 @@ void TrackStore::applyVq(const Asterix::Cat048 &r)
     if (hasPos) {
         const double oldAz = t.azimuthDeg();
         const double oldRange = t.rangeM();
-        if (!added) {
-            t.history.append(TrackPoint{t.f[Track::Azm], t.f[Track::Range]});
-            if (t.history.size() > kMaxHistory)
-                t.history.remove(0, int(t.history.size()) - kMaxHistory);
-        }
+        if (!added)
+            t.pushHistory();
         t.f[Track::Azm] = centiDegrees(azDeg);
         t.f[Track::Range] = quint32(std::lround(qMax(0.0, rangeM)));
         t.positionTod = Asterix::timeOfDayNow();
@@ -166,6 +163,52 @@ bool TrackStore::mergePlot(const quint32 *plot, double halfAzDeg, double halfRan
     return true;
 }
 
+void TrackStore::applyMhPlot(const quint32 *plot)
+{
+    MhTracker::Events ev;
+    if (m_mh.plot(m_tracks, plot, m_clock.elapsed(), &ev))
+        emitMhEvents(ev);
+}
+
+void TrackStore::mhSweep(double azDeg)
+{
+    MhTracker::Events ev;
+    m_mh.sweep(m_tracks, azDeg, m_clock.elapsed(), &ev);
+    if (!ev.added.isEmpty() || !ev.updated.isEmpty() || !ev.expired.isEmpty())
+        emitMhEvents(ev);
+}
+
+void TrackStore::emitMhEvents(const MhTracker::Events &ev)
+{
+    // Bộ bám không biết tâm đài: lat/lng tính ở đây, ngay trước khi báo đi.
+    const auto announce = [this](quint32 id, bool added) {
+        const int i = indexOf(id);
+        if (i < 0)
+            return;
+        setLatLng(&m_tracks[i]);
+        emit trackUpdated(m_tracks.at(i), added);
+    };
+    for (quint32 id : ev.added)
+        announce(id, true);
+    for (quint32 id : ev.updated)
+        announce(id, false);
+    for (quint32 id : ev.expired)
+        remove(id, RemovedExtrapolated);
+}
+
+int TrackStore::removeMhTracks(RemoveReason reason)
+{
+    m_mh.clearPending();
+    QVector<quint32> ids;
+    for (const TrackEntry &t : std::as_const(m_tracks)) {
+        if (t.type() == Track::TypeMh)
+            ids.append(t.id());
+    }
+    for (quint32 id : std::as_const(ids))
+        remove(id, reason);
+    return int(ids.size());
+}
+
 bool TrackStore::remove(quint32 id, RemoveReason reason)
 {
     const int i = indexOf(id);
@@ -182,6 +225,10 @@ void TrackStore::removeAll(RemoveReason reason)
     // Lấy ra hết trước rồi mới báo: lớp nhận tín hiệu có thể đọc lại danh sách.
     QVector<TrackEntry> gone;
     gone.swap(m_tracks);
+    if (reason == RemovedDisconnected)
+        m_mh.reset();
+    else
+        m_mh.clearPending();
     for (TrackEntry &t : gone) {
         t.f[Track::TrackStatus] = Track::StatusDeleted;
         emit trackRemoved(t, reason);
