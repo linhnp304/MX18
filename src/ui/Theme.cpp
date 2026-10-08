@@ -110,6 +110,9 @@ QSplitter::handle:hover { background: #3fa9f5; }
 QToolTip {
     background: #22272d; color: #d3dbe3; border: 1px solid #3fa9f5; padding: 3px;
 }
+QMenu { background: #1b1f24; border: 1px solid #3fa9f5; padding: 3px 0; }
+QMenu::item { padding: 4px 22px 4px 14px; background: transparent; }
+QMenu::item:selected { background: #2f6ea5; color: #ffffff; }
 QDialog, QMainWindow { background: #14171a; }
 QLabel#SectionTitle { color: #7fc4ff; font-weight: bold; }
 )QSS");

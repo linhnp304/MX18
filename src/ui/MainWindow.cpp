@@ -136,6 +136,7 @@ void MainWindow::buildUi()
     m_tracks = new TrackStore(this);
     m_tracks->setCenter(setups.radarLat, setups.radarLon);
     m_tracks->setDropSeconds(setups.trackDropSec);
+    m_mapView->setTrackStore(m_tracks);
     m_vq = new VqSender(this);
     applyVqConfig();
 
@@ -216,6 +217,8 @@ void MainWindow::wireSignals()
         // Dừng kết nối thì dòng SCH-VQ cũng đã đóng, không còn ai để báo.
         if (reason != TrackStore::RemovedDisconnected)
             m_vq->sendTrack(t, true);
+        if (reason == TrackStore::RemovedByUser)
+            notify(QStringLiteral("Đã xóa quỹ đạo Tốp %1.").arg(t.f[Track::TrackTop]));
     });
     connect(m_vq, &VqSender::datagram, this, [this](const QByteArray &bytes) {
         m_links->sendRaw(QStringLiteral("SCH-VQ"), bytes);
@@ -444,6 +447,18 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
     case Proto::CatPlot:
         onPlot(data, be);
         return;
+    case Proto::CatAlarmHead: {
+        quint32 head = 0;
+        if (!Proto::unpackFields(data, &head, AlarmHead::Count, be))
+            return;
+        const double deg = (head % 36000u) / 100.0;
+        if (!m_alarmNoted) {
+            m_alarmNoted = true;
+            notify(QStringLiteral("Nhận hướng báo động đầu tiên (%1°).").arg(deg, 0, 'f', 1));
+        }
+        m_mapView->addAlarm(deg);
+        return;
+    }
     case Proto::CatCmdAtBack: {
         quint32 fields[CmdAt::Count] = {0};
         if (!Proto::unpackFields(data, fields, CmdAt::Count, be))
@@ -497,6 +512,7 @@ void MainWindow::onPlot(const QByteArray &data, bool be)
                    .arg(f[Plot::Retmode]));
     }
 
+    m_mapView->addPlot(f);
     m_vq->sendPlot(f);
 
     // X18-SCN-S: điểm dấu MH thật sang PC dạng Cf loại 12, giờ Unix UTC thật
@@ -641,6 +657,7 @@ void MainWindow::setConnected(bool connected)
         m_mhPopup->clearStatus();
         m_engineerWindow->clearBack();
         m_tracks->removeAll(TrackStore::RemovedDisconnected);
+        m_mapView->clearTargets();
         m_vq->resetSweep();
         m_statusPanel->setSweepAngles(false, 0.0, 0.0);
     }
@@ -656,6 +673,7 @@ void MainWindow::setConnected(bool connected)
     m_scnPlotsSent = 0;
     m_vqTrackNoted = false;
     m_plotNoted = false;
+    m_alarmNoted = false;
     m_statusPanel->setPopupState(StatusPanel::ScnStatus, connected ? StatusPanel::Warn : StatusPanel::Idle);
     showScnStatus();
 

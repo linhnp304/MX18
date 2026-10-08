@@ -79,6 +79,10 @@ set(MX18_SOURCES
     src/ui/SplashWindow.h
     src/ui/MapView.cpp
     src/ui/MapView.h
+    src/ui/TargetLayer.cpp
+    src/ui/TargetLayer.h
+    src/ui/TrackInfoBox.cpp
+    src/ui/TrackInfoBox.h
     src/ui/AmplitudeView.cpp
     src/ui/AmplitudeView.h
     src/ui/ControlPanel.cpp

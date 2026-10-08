@@ -39,4 +39,9 @@ void drawAirport(QPainter *p, const QPointF &center, int level, double headingDe
 // Ký hiệu tâm đài trên bản đồ.
 void drawRadarSite(QPainter *p, const QPointF &center, double size, const QColor &color);
 
+// Ký hiệu quỹ đạo: hình máy bay vẽ lại từ docs/images/Track.png, mũi hướng theo
+// headingDeg (0 = bắc, chiều kim đồng hồ), size là cạnh ô vuông bao ngoài.
+void drawTrack(QPainter *p, const QPointF &center, double headingDeg, double size,
+               const QColor &color);
+
 } // namespace IconFactory

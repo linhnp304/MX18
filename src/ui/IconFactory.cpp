@@ -6,6 +6,7 @@
 #include <QtMath>
 
 #include <cmath>
+#include <iterator> // std::size
 
 namespace {
 
@@ -292,6 +293,55 @@ void drawRadarSite(QPainter *p, const QPointF &center, double size, const QColor
         p->drawLine(QPointF(c * size * 0.32, s * size * 0.32),
                     QPointF(c * size * 0.55, s * size * 0.55));
     }
+    p->restore();
+}
+
+namespace {
+
+// Đo từ mặt nạ alpha của Track.png (128x128, gốc ở giữa ảnh, mũi hướng lên):
+// thân rộng 14, cánh chạm mép ảnh, đuôi có khía chữ V. Chỉ nửa phải, nửa trái
+// lấy đối xứng.
+QPainterPath trackPath()
+{
+    static const QPointF kRight[] = {
+        {7, -56},   // vai mũi (mũi là nửa hình tròn bán kính 7)
+        {7, -18},   // gốc mép trước cánh
+        {61, 18},   // đầu cánh
+        {61, 31},
+        {7, 14},    // gốc mép sau cánh
+        {7, 42},    // gốc cánh đuôi
+        {19, 54},
+        {19, 63},
+        {0, 57},    // đáy khía đuôi
+    };
+    QPainterPath path;
+    path.moveTo(-7, -56);
+    path.arcTo(QRectF(-7, -63, 14, 14), 180, -180);
+    for (const QPointF &pt : kRight)
+        path.lineTo(pt);
+    for (int i = int(std::size(kRight)) - 2; i >= 0; --i)
+        path.lineTo(-kRight[i].x(), kRight[i].y());
+    path.closeSubpath();
+    return path;
+}
+
+} // namespace
+
+void drawTrack(QPainter *p, const QPointF &center, double headingDeg, double size,
+               const QColor &color)
+{
+    static const QPainterPath kPath = trackPath();
+    p->save();
+    p->setRenderHint(QPainter::Antialiasing, true);
+    p->translate(center);
+    p->rotate(headingDeg);          // trục y màn hình hướng xuống nên quay dương = theo kim đồng hồ
+    p->scale(size / 128.0, size / 128.0);
+    // Viền tối mảnh để ký hiệu không chìm vào nền bản đồ sáng cùng tông màu.
+    QPen pen(QColor(0, 0, 0, 150), 1.0);
+    pen.setCosmetic(true);
+    p->setPen(pen);
+    p->setBrush(color);
+    p->drawPath(kPath);
     p->restore();
 }
 

@@ -4,10 +4,13 @@
 #include "core/Settings.h"
 #include "map/MapData.h"
 #include "proto/Packets.h"
+#include "track/TrackStore.h"
 #include "ui/IconFactory.h"
 #include "ui/Theme.h"
+#include "ui/TrackInfoBox.h"
 
 #include <QHBoxLayout>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QFontInfo>
@@ -38,6 +41,9 @@ constexpr int kVideoFrameMs = 40;
 // Chặn hàng đợi tia quét: nếu giao diện kẹt vài giây thì bỏ tia cũ chứ không để
 // bộ nhớ phình theo.
 constexpr int kMaxPendingSpokes = 1200;
+
+// Tia báo động đổi màu 4 lần mỗi giây nên nhịp kiểm tra phải đúng 250 ms.
+constexpr int kTargetTickMs = 250;
 
 const QColor kSweepRdColor(0x3f, 0xa9, 0xf5);  // xanh biển: đường quét RD
 const QColor kSweepMhColor(0x3c, 0xff, 0x6a);  // xanh lá: đường quét MH
@@ -120,6 +126,16 @@ MapView::MapView(QWidget *parent)
     m_videoTimer = new QTimer(this);
     m_videoTimer->setInterval(kVideoFrameMs);
     connect(m_videoTimer, &QTimer::timeout, this, &MapView::flushVideo);
+
+    m_targetTimer = new QTimer(this);
+    m_targetTimer->setInterval(kTargetTickMs);
+    connect(m_targetTimer, &QTimer::timeout, this, [this] {
+        if (!m_targets.prune())
+            m_targetTimer->stop();
+        update();
+    });
+
+    m_infoBox = new TrackInfoBox(this);
 }
 
 void MapView::setMapData(MapData *data)
@@ -223,6 +239,7 @@ void MapView::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     layoutZoomBar();
+    m_infoBox->keepInside();
     // Lần hiện đầu tiên panel chưa có kích thước thật, nên phải tính lại tỉ lệ
     // vừa vòng 360 km khi panel nhận kích thước cuối cùng.
     if (m_fitPending) {
@@ -245,6 +262,18 @@ void MapView::layoutZoomBar()
 
 void MapView::mousePressEvent(QMouseEvent *event)
 {
+    // Bấm trúng quỹ đạo: trái mở cửa sổ thông tin, phải mở menu; trượt ra
+    // ngoài thì nút trái vẫn là kéo bản đồ như cũ.
+    quint32 id = 0;
+    if ((event->button() == Qt::LeftButton || event->button() == Qt::RightButton)
+        && m_targets.trackAt(viewTransform(), event->position(), &id)) {
+        if (event->button() == Qt::LeftButton)
+            showTrackInfo(id);
+        else
+            showTrackMenu(id);
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::LeftButton) {
         m_panning = true;
         m_panLastScreen = event->position();
@@ -266,6 +295,16 @@ void MapView::mouseMoveEvent(QMouseEvent *event)
         update();
     }
 
+    if (!m_panning) {
+        // Báo cho trắc thủ biết chỗ này bấm được.
+        quint32 id = 0;
+        const bool over = m_targets.trackAt(viewTransform(), pos, &id);
+        if (over != m_overTrack) {
+            m_overTrack = over;
+            setCursor(over ? Qt::PointingHandCursor : Qt::CrossCursor);
+        }
+    }
+
     bool ok = false;
     const QTransform inv = viewTransform().inverted(&ok);
     if (ok) {
@@ -281,6 +320,7 @@ void MapView::mouseReleaseEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && m_panning) {
         m_panning = false;
+        m_overTrack = false;
         setCursor(Qt::CrossCursor);
     }
     QWidget::mouseReleaseEvent(event);
@@ -316,7 +356,125 @@ void MapView::paintEvent(QPaintEvent *)
     if (!m_videoLayer.isNull())
         p.drawImage(QPointF(0, 0), m_videoLayer);
     drawSweepLines(p);
+    m_targets.draw(p, viewTransform(), m_scale, QRectF(rect()), font());
     drawInfoBox(p);
+}
+
+// ----------------------------------------------------- quỹ đạo, điểm dấu
+
+void MapView::setTrackStore(TrackStore *store)
+{
+    m_trackStore = store;
+    m_targets.setTrackStore(store);
+    if (!store)
+        return;
+    connect(store, &TrackStore::trackUpdated, this,
+            [this](const TrackEntry &t, bool) { onTrackChanged(t.id()); });
+    connect(store, &TrackStore::trackChanged, this, &MapView::onTrackChanged);
+    connect(store, &TrackStore::trackRemoved, this, [this](const TrackEntry &t, int) {
+        if (m_infoBox->isVisible() && m_infoBox->trackId() == t.id())
+            m_infoBox->closeBox();
+        update();
+    });
+}
+
+void MapView::onTrackChanged(quint32 id)
+{
+    if (m_infoBox->isVisible() && m_infoBox->trackId() == id) {
+        if (const TrackEntry *t = m_trackStore->find(id))
+            m_infoBox->setTrack(*t);
+    }
+    update();
+}
+
+void MapView::startTargetTimer()
+{
+    if (!m_targetTimer->isActive())
+        m_targetTimer->start();
+    update();
+}
+
+void MapView::addPlot(const quint32 *plotFields)
+{
+    m_targets.addPlot(plotFields);
+    startTargetTimer();
+}
+
+void MapView::clearPlots()
+{
+    m_targets.clearPlots();
+    update();
+}
+
+void MapView::addAlarm(double headDeg)
+{
+    m_targets.addAlarm(headDeg);
+    startTargetTimer();
+}
+
+void MapView::clearTargets()
+{
+    m_targets.clearPlots();
+    m_targets.clearAlarms();
+    m_targetTimer->stop();
+    update();
+}
+
+bool MapView::trackScreenPos(quint32 id, QPointF *pos) const
+{
+    const TrackEntry *t = m_trackStore ? m_trackStore->find(id) : nullptr;
+    if (!t)
+        return false;
+    *pos = viewTransform().map(TargetLayer::trackPlane(*t));
+    return true;
+}
+
+void MapView::showTrackInfo(quint32 id)
+{
+    const TrackEntry *t = m_trackStore ? m_trackStore->find(id) : nullptr;
+    if (!t)
+        return;
+    const bool reposition = !m_infoBox->isVisible() || !m_infoBox->userMoved();
+    m_infoBox->setTrack(*t);
+    if (reposition) {
+        // Bên phải cạnh quỹ đạo; sát mép phải panel thì lật sang bên trái.
+        const QPointF s = viewTransform().map(TargetLayer::trackPlane(*t));
+        const double gap = TargetLayer::trackSymbolSize() / 2.0 + 10.0;
+        int x = qRound(s.x() + gap);
+        if (x + m_infoBox->width() > width())
+            x = qRound(s.x() - gap) - m_infoBox->width();
+        m_infoBox->move(x, qRound(s.y()) - m_infoBox->height() / 2);
+        m_infoBox->keepInside();
+    }
+    m_infoBox->show();
+    m_infoBox->raise();
+}
+
+void MapView::showTrackMenu(quint32 id)
+{
+    const TrackEntry *t = m_trackStore ? m_trackStore->find(id) : nullptr;
+    if (!t)
+        return;
+
+    auto *menu = new QMenu(this);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    const bool followed = t->followed;
+    // Các mục gọi lại theo id chứ không giữ con trỏ: quỹ đạo có thể bị xoá
+    // (hết giờ, TRE) trong lúc menu đang mở, khi đó lệnh không làm gì.
+    menu->addAction(followed ? QStringLiteral("Bỏ theo dõi") : QStringLiteral("Theo dõi"), this,
+                    [this, id, followed] { m_trackStore->setFollowed(id, !followed); });
+    menu->addAction(QStringLiteral("Xóa"), this,
+                    [this, id] { m_trackStore->remove(id, TrackStore::RemovedByUser); });
+    // track_type 1 chưa có gì để xoá, track_type 3 nhận dạng là bản chất của nó.
+    if (t->type() == Track::TypeVqMh) {
+        menu->addAction(QStringLiteral("Xóa nhận dạng"), this,
+                        [this, id] { m_trackStore->clearIdentity(id); });
+    }
+
+    const QPointF s = viewTransform().map(TargetLayer::trackPlane(*t));
+    const double gap = TargetLayer::trackSymbolSize() / 2.0 + 4.0;
+    // popup() chứ không exec(): không chặn vòng sự kiện, video vẫn chạy.
+    menu->popup(mapToGlobal(QPoint(qRound(s.x() + gap), qRound(s.y() - gap))));
 }
 
 // ---------------------------------------------------- đường quét và biên độ

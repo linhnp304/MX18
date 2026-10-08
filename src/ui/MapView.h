@@ -2,6 +2,7 @@
 
 #include "core/GeoCalc.h"
 #include "map/MapPalette.h"
+#include "ui/TargetLayer.h"
 
 #include <QByteArray>
 #include <QElapsedTimer>
@@ -15,6 +16,8 @@ class MapData;
 class QSlider;
 class QTimer;
 class QToolButton;
+class TrackInfoBox;
+class TrackStore;
 
 // Panel 1: nền bản đồ số và mọi đối tượng đồ hoạ vẽ trên đó.
 //
@@ -46,6 +49,21 @@ public:
     void setMhSweep(double azimuthDeg, const QByteArray &video);
     void clearVideo();
 
+    // Quỹ đạo vẽ thẳng từ danh sách; menu chuột phải gọi lại Theo dõi / Xóa /
+    // Xóa nhận dạng của chính danh sách đó.
+    void setTrackStore(TrackStore *store);
+    void addPlot(const quint32 *plotFields);
+    void clearPlots();
+    void addAlarm(double headDeg);
+    // Dừng kết nối: bỏ điểm dấu và tia báo động đang hiện.
+    void clearTargets();
+
+    // Mở (hoặc chuyển) cửa sổ thông tin quỹ đạo sang quỹ đạo id — bấm chuột
+    // trái vào quỹ đạo, hoặc bấm đúp dòng của nó trong tab "Danh sách".
+    void showTrackInfo(quint32 id);
+    // Vị trí trên panel của quỹ đạo id; false nếu không có quỹ đạo đó.
+    bool trackScreenPos(quint32 id, QPointF *pos) const;
+
 signals:
     // valid = false khi con trỏ rời khỏi panel.
     void cursorGeoChanged(bool valid, double lat, double lon, double bearing, double range);
@@ -76,6 +94,9 @@ private:
     void layoutZoomBar();
     void syncZoomSlider();
     void onZoomSlider(int value);
+    void startTargetTimer();
+    void onTrackChanged(quint32 id);
+    void showTrackMenu(quint32 id);
 
     MapData *m_data = nullptr;
     LocalProjection m_proj;
@@ -115,4 +136,12 @@ private:
     bool m_updatingSlider = false;
 
     QPixmap m_logo;
+
+    TargetLayer m_targets;
+    TrackStore *m_trackStore = nullptr;
+    TrackInfoBox *m_infoBox = nullptr;
+    // Nhịp 250 ms cho tia báo động nhấp nháy và xoá điểm dấu hết hạn khi không
+    // có video kéo màn hình vẽ lại.
+    QTimer *m_targetTimer = nullptr;
+    bool m_overTrack = false;
 };

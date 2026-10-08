@@ -26,10 +26,14 @@ struct SwInfo {
 };
 
 struct DisplayColors {
-    QColor grid       = QColor(0xFF, 0xFF, 0x80); // đường quét + đường chia độ
-    QColor trackTrail = QColor(0xFF, 0xA5, 0x00); // vết lịch sử quỹ đạo
-    QColor track      = QColor(0x3F, 0xA9, 0xF5); // quỹ đạo
-    QColor plot       = QColor(0xFF, 0x30, 0x30); // điểm dấu MH
+    QColor grid         = QColor(0xFF, 0xFF, 0x80); // đường quét + đường chia độ
+    QColor trackTrail   = QColor(0xFF, 0xA5, 0x00); // vết lịch sử quỹ đạo
+    QColor track        = QColor(0x3F, 0xA9, 0xF5); // quỹ đạo chưa có nhận dạng (track_type 1)
+    QColor trackMh      = QColor(0xFF, 0x00, 0x00); // quỹ đạo có nhận dạng MH (track_type 2, 3)
+    QColor trackProfile = QColor(0xFF, 0xFF, 0xC8); // lý lịch quỹ đạo
+    QColor plot         = QColor(0xFF, 0x30, 0x30); // điểm dấu MH
+    QColor alarm1       = QColor(0xB0, 0x40, 0xFF); // tia báo động nhấp nháy giữa hai màu
+    QColor alarm2       = QColor(0xFF, 0x20, 0x20);
 };
 
 struct Setups {
@@ -46,10 +50,15 @@ struct Setups {
     int azimuthMode = 0;       // 0: 30 độ, 1: 10 độ, 2: 5 độ, 3: tắt
 
     DisplayColors colors;
-    int plotHoldSec = 8;       // giây hiển thị điểm dấu MH
-    int trackDropSec = 40;     // giây không có cập nhật thì xoá quỹ đạo
+    int plotHoldSec = 8;       // giây hiển thị điểm dấu MH (và tia báo động), 1..60
+    int trackDropSec = 40;     // giây không có cập nhật thì xoá quỹ đạo, 10..600
     int trackSizePct = 100;
     int plotSizePct = 100;
+    // false: hợp nhất điểm dấu MH vào quỹ đạo X18-VQ (phương án 1);
+    // true: khởi tạo và bám quỹ đạo từ điểm dấu MH (phương án 2).
+    bool mhTrackInit = false;
+    double mergeAzimuthDeg = 3.0;  // cửa sổ hợp nhất: ± ngần này quanh điểm dấu
+    double mergeRangeKm = 3.0;
 
     double radarLat = 21.202111;
     double radarLon = 105.813417;

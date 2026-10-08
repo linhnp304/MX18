@@ -113,6 +113,7 @@ private:
     VqSender *m_vq = nullptr;
     bool m_vqTrackNoted = false;
     bool m_plotNoted = false;
+    bool m_alarmNoted = false;
     quint32 m_scnPlotsSent = 0;
 
     // Góc quét đến 400 lần/giây cho mỗi loại; thanh trạng thái chỉ cần 10 lần.

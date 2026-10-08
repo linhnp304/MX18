@@ -95,18 +95,25 @@ void Settings::loadSetups()
     m_setups.showPlotInfo     = JsonFile::b(o, QStringLiteral("show_plot_info"), d.showPlotInfo);
     m_setups.rangeRingMode    = qBound(0, JsonFile::i(o, QStringLiteral("range_ring_mode"), d.rangeRingMode), 3);
     m_setups.azimuthMode      = qBound(0, JsonFile::i(o, QStringLiteral("azimuth_mode"), d.azimuthMode), 3);
-    m_setups.plotHoldSec      = qBound(1, JsonFile::i(o, QStringLiteral("plot_hold_sec"), d.plotHoldSec), 600);
+    m_setups.plotHoldSec      = qBound(1, JsonFile::i(o, QStringLiteral("plot_hold_sec"), d.plotHoldSec), 60);
     m_setups.trackDropSec     = qBound(10, JsonFile::i(o, QStringLiteral("track_drop_sec"), d.trackDropSec), 600);
     m_setups.trackSizePct     = JsonFile::i(o, QStringLiteral("track_size_pct"), d.trackSizePct);
     m_setups.plotSizePct      = JsonFile::i(o, QStringLiteral("plot_size_pct"), d.plotSizePct);
+    m_setups.mhTrackInit      = JsonFile::b(o, QStringLiteral("mh_track_init"), d.mhTrackInit);
+    m_setups.mergeAzimuthDeg  = qBound(0.1, JsonFile::num(o, QStringLiteral("merge_azimuth_deg"), d.mergeAzimuthDeg), 30.0);
+    m_setups.mergeRangeKm     = qBound(0.1, JsonFile::num(o, QStringLiteral("merge_range_km"), d.mergeRangeKm), 50.0);
     m_setups.radarLat         = JsonFile::num(o, QStringLiteral("radar_lat"), d.radarLat);
     m_setups.radarLon         = JsonFile::num(o, QStringLiteral("radar_lon"), d.radarLon);
 
     const QJsonObject c = o.value(QStringLiteral("colors")).toObject();
     m_setups.colors.grid       = colorFrom(c, QStringLiteral("grid"), d.colors.grid);
     m_setups.colors.trackTrail = colorFrom(c, QStringLiteral("track_trail"), d.colors.trackTrail);
-    m_setups.colors.track      = colorFrom(c, QStringLiteral("track"), d.colors.track);
-    m_setups.colors.plot       = colorFrom(c, QStringLiteral("plot"), d.colors.plot);
+    m_setups.colors.track        = colorFrom(c, QStringLiteral("track"), d.colors.track);
+    m_setups.colors.trackMh      = colorFrom(c, QStringLiteral("track_mh"), d.colors.trackMh);
+    m_setups.colors.trackProfile = colorFrom(c, QStringLiteral("track_profile"), d.colors.trackProfile);
+    m_setups.colors.plot         = colorFrom(c, QStringLiteral("plot"), d.colors.plot);
+    m_setups.colors.alarm1       = colorFrom(c, QStringLiteral("alarm_1"), d.colors.alarm1);
+    m_setups.colors.alarm2       = colorFrom(c, QStringLiteral("alarm_2"), d.colors.alarm2);
 
     if (!QFile::exists(path))
         saveSetups();
@@ -130,14 +137,21 @@ void Settings::saveSetups()
     o[QStringLiteral("track_drop_sec")]     = m_setups.trackDropSec;
     o[QStringLiteral("track_size_pct")]     = m_setups.trackSizePct;
     o[QStringLiteral("plot_size_pct")]      = m_setups.plotSizePct;
+    o[QStringLiteral("mh_track_init")]      = m_setups.mhTrackInit;
+    o[QStringLiteral("merge_azimuth_deg")]  = m_setups.mergeAzimuthDeg;
+    o[QStringLiteral("merge_range_km")]     = m_setups.mergeRangeKm;
     o[QStringLiteral("radar_lat")]          = m_setups.radarLat;
     o[QStringLiteral("radar_lon")]          = m_setups.radarLon;
 
     QJsonObject c;
     c[QStringLiteral("grid")]        = colorToHex(m_setups.colors.grid);
     c[QStringLiteral("track_trail")] = colorToHex(m_setups.colors.trackTrail);
-    c[QStringLiteral("track")]       = colorToHex(m_setups.colors.track);
-    c[QStringLiteral("plot")]        = colorToHex(m_setups.colors.plot);
+    c[QStringLiteral("track")]         = colorToHex(m_setups.colors.track);
+    c[QStringLiteral("track_mh")]      = colorToHex(m_setups.colors.trackMh);
+    c[QStringLiteral("track_profile")] = colorToHex(m_setups.colors.trackProfile);
+    c[QStringLiteral("plot")]          = colorToHex(m_setups.colors.plot);
+    c[QStringLiteral("alarm_1")]       = colorToHex(m_setups.colors.alarm1);
+    c[QStringLiteral("alarm_2")]       = colorToHex(m_setups.colors.alarm2);
     o[QStringLiteral("colors")] = c;
 
     JsonFile::write(AppPaths::settingsFile(QStringLiteral("setups.json")), o);
