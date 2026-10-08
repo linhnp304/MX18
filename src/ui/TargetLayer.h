@@ -24,9 +24,14 @@ namespace IffText {
 QString mode(quint32 retmode, bool *bold = nullptr);
 
 // Các dòng chỉ hiện ở đúng chế độ của nó: tốp chỉ huy (3), số hiệu (4), độ
-// cao và nhiên liệu (6); giá trị 0 nghĩa là không có.
+// cao và nhiên liệu (6); giá trị 0 nghĩa là không có. Dùng cho điểm dấu MH.
 QStringList details(quint32 retmode, quint32 commander, quint32 flightid,
                     quint32 altitude, quint32 fuel);
+
+// Nhận dạng quỹ đạo đang giữ: hiện mọi trường khác 0 bất kể chế độ mới nhất,
+// vì nhận dạng hợp nhất được giữ suốt đời quỹ đạo — vòng chế độ 1 vẫn phải
+// thấy số hiệu lấy từ vòng chế độ 4 (anh Linh chốt 2026-10-08).
+QStringList held(quint32 commander, quint32 flightid, quint32 altitude, quint32 fuel);
 
 } // namespace IffText
 

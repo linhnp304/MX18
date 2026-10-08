@@ -29,7 +29,11 @@ void VqSender::sendTrack(const TrackEntry &t, bool endOfTrack)
     o.commander = (t.f[Track::IffCommander] == 1);
     o.flightId = t.f[Track::IffFlightid];
     o.fuel = quint8(qMin<quint32>(t.f[Track::IffFuellevel], 255));
-    emit datagram(Asterix::targetReport(m_cfg.encode, Asterix::timeOfDayNow(), o));
+    // Bản tin cập nhật mang giờ của vị trí: lúc hợp nhất điểm dấu, vị trí còn là
+    // của lần X18-VQ trước, gắn giờ hiện tại thì VQ thấy quỹ đạo nhảy lùi. Bản
+    // tin cuối (TRE) vẫn lấy giờ hiện tại để không trùng giờ bản tin đã gửi.
+    const quint32 tod = (!endOfTrack && t.positionTod) ? t.positionTod : Asterix::timeOfDayNow();
+    emit datagram(Asterix::targetReport(m_cfg.encode, tod, o));
 }
 
 void VqSender::sendPlot(const quint32 *p)

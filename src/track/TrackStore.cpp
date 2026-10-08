@@ -1,6 +1,7 @@
 #include "track/TrackStore.h"
 
 #include "proto/Asterix.h"
+#include "track/PlotMerge.h"
 
 #include <QTimer>
 #include <QtMath>
@@ -121,6 +122,7 @@ void TrackStore::applyVq(const Asterix::Cat048 &r)
         }
         t.f[Track::Azm] = centiDegrees(azDeg);
         t.f[Track::Range] = quint32(std::lround(qMax(0.0, rangeM)));
+        t.positionTod = Asterix::timeOfDayNow();
         setLatLng(&t);
 
         if (!r.speed && !added && now - t.updatedMs >= kMinVelocityIntervalMs) {
@@ -142,6 +144,26 @@ void TrackStore::applyVq(const Asterix::Cat048 &r)
     t.updatedMs = now;
 
     emit trackUpdated(t, added);
+}
+
+bool TrackStore::mergePlot(const quint32 *plot, double halfAzDeg, double halfRangeKm, quint32 *mergedId)
+{
+    if (!PlotMerge::validMode(plot[Plot::Retmode]))
+        return false;
+    const double azDeg = (plot[Plot::Azm] % 36000u) / 100.0;
+    const double rangeM = double(plot[Plot::Range]);
+    const PlotMerge::Window w = PlotMerge::window(azDeg, rangeM, halfAzDeg, halfRangeKm * 1000.0);
+    const int i = PlotMerge::pick(m_tracks, w, LocalProjection::planeFromPolar(azDeg, rangeM / 1000.0));
+    if (i < 0)
+        return false;
+    TrackEntry &t = m_tracks[i];
+    if (mergedId)
+        *mergedId = t.id();
+    // Vị trí giữ nguyên của X18-VQ: điểm dấu chỉ mang nhận dạng vào, và hạn xoá
+    // theo giờ vẫn tính theo lần cập nhật từ nguồn quỹ đạo.
+    if (PlotMerge::applyIdentity(&t, plot))
+        emit trackUpdated(t, false);
+    return true;
 }
 
 bool TrackStore::remove(quint32 id, RemoveReason reason)

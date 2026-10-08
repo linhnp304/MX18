@@ -70,6 +70,8 @@ set(MX18_SOURCES
     src/track/TrackStore.h
     src/track/VqSender.cpp
     src/track/VqSender.h
+    src/track/PlotMerge.cpp
+    src/track/PlotMerge.h
 
     src/ui/Theme.cpp
     src/ui/Theme.h
@@ -83,6 +85,10 @@ set(MX18_SOURCES
     src/ui/TargetLayer.h
     src/ui/TrackInfoBox.cpp
     src/ui/TrackInfoBox.h
+    src/ui/TrackListTab.cpp
+    src/ui/TrackListTab.h
+    src/ui/PlotListWindow.cpp
+    src/ui/PlotListWindow.h
     src/ui/AmplitudeView.cpp
     src/ui/AmplitudeView.h
     src/ui/ControlPanel.cpp

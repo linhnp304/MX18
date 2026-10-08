@@ -15,10 +15,12 @@
 #include "ui/EngineerWindow.h"
 #include "ui/MapView.h"
 #include "ui/MhStatusPopup.h"
+#include "ui/PlotListWindow.h"
 #include "ui/Popups.h"
 #include "ui/SettingsTab.h"
 #include "ui/SetupDialogs.h"
 #include "ui/Theme.h"
+#include "ui/TrackListTab.h"
 #include "ui/ViewIqWindow.h"
 
 #include <QKeyEvent>
@@ -124,6 +126,7 @@ void MainWindow::buildUi()
 
     m_colorDialog = new ColorSetupDialog(this);
     m_engineerWindow = new EngineerWindow(this);
+    m_plotWindow = new PlotListWindow(this);
 
     m_links = new LinkManager(this);
     m_links->setConfig(m_linkConfig);
@@ -137,6 +140,7 @@ void MainWindow::buildUi()
     m_tracks->setCenter(setups.radarLat, setups.radarLon);
     m_tracks->setDropSeconds(setups.trackDropSec);
     m_mapView->setTrackStore(m_tracks);
+    m_controlPanel->trackListTab()->setTrackStore(m_tracks);
     m_vq = new VqSender(this);
     applyVqConfig();
 
@@ -186,6 +190,15 @@ void MainWindow::wireSignals()
     });
     connect(ctrl, &ControlTab::cmdAtChanged, this, &MainWindow::sendCmdAt);
     connect(ctrl, &ControlTab::cmdUserChanged, this, &MainWindow::sendCmdUser);
+
+    TrackListTab *list = m_controlPanel->trackListTab();
+    connect(list, &TrackListTab::trackActivated, m_mapView, &MapView::showTrackInfo);
+    connect(list, &TrackListTab::plotListRequested, this, &MainWindow::openPlotListWindow);
+    connect(list, &TrackListTab::clearPlotsRequested, this, [this] {
+        m_mapView->clearPlots();
+        notify(QStringLiteral("Đã xóa điểm dấu MH đang hiển thị."));
+    });
+    connect(list, &TrackListTab::notice, this, [this](const QString &text) { notify(text); });
 
     connect(m_engineerWindow, &EngineerWindow::configSaved, this,
             [this](const QString &message) { notify(message); });
@@ -513,7 +526,22 @@ void MainWindow::onPlot(const QByteArray &data, bool be)
     }
 
     m_mapView->addPlot(f);
+    m_plotWindow->addPlot(f);
     m_vq->sendPlot(f);
+
+    // Phương án 1: hợp nhất nhận dạng vào quỹ đạo X18-VQ. Đã chọn "Khởi tạo quỹ
+    // đạo từ điểm dấu MH" thì điểm dấu dành cho bộ bám MH, không hợp nhất.
+    const Setups &setups = Settings::instance().setups();
+    quint32 mergedId = 0;
+    if (!setups.mhTrackInit
+        && m_tracks->mergePlot(f, setups.mergeAzimuthDeg, setups.mergeRangeKm, &mergedId)
+        && !m_mergeNoted) {
+        m_mergeNoted = true;
+        const TrackEntry *t = m_tracks->find(mergedId);
+        notify(QStringLiteral("Hợp nhất điểm dấu MH đầu tiên vào quỹ đạo Tốp %1 (chế độ %2).")
+                   .arg(t ? t->f[Track::TrackTop] : mergedId)
+                   .arg(f[Plot::Retmode]));
+    }
 
     // X18-SCN-S: điểm dấu MH thật sang PC dạng Cf loại 12, giờ Unix UTC thật
     // (SW1 gửi hằng số 907 s); TargetSource và IffNrz giữ như SW1.
@@ -637,6 +665,13 @@ void MainWindow::openViewIqWindow()
     m_viewIqWindow->activateWindow();
 }
 
+void MainWindow::openPlotListWindow()
+{
+    m_plotWindow->show();
+    m_plotWindow->raise();
+    m_plotWindow->activateWindow();
+}
+
 // ------------------------------------------------------------- kết nối
 
 void MainWindow::setConnected(bool connected)
@@ -673,6 +708,7 @@ void MainWindow::setConnected(bool connected)
     m_scnPlotsSent = 0;
     m_vqTrackNoted = false;
     m_plotNoted = false;
+    m_mergeNoted = false;
     m_alarmNoted = false;
     m_statusPanel->setPopupState(StatusPanel::ScnStatus, connected ? StatusPanel::Warn : StatusPanel::Idle);
     showScnStatus();

@@ -101,6 +101,10 @@ QCheckBox::indicator {
     border: 1px solid #55606b; background: #101316; border-radius: 2px;
 }
 QCheckBox::indicator:checked { background: #3fa9f5; border-color: #3fa9f5; }
+QTableView::indicator {
+    width: 13px; height: 13px; border: 1px solid #55606b; background: #101316; border-radius: 2px;
+}
+QTableView::indicator:checked { background: #3fa9f5; border-color: #3fa9f5; }
 QRadioButton::indicator {
     border: 1px solid #55606b; background: #101316; border-radius: 7px;
 }

@@ -3,12 +3,11 @@
 #include "ui/AmplitudeView.h"
 #include "ui/ControlTab.h"
 #include "ui/SettingsTab.h"
+#include "ui/TrackListTab.h"
 
-#include <QHeaderView>
 #include <QLabel>
 #include <QSplitter>
 #include <QTabWidget>
-#include <QTableWidget>
 #include <QVBoxLayout>
 
 namespace {
@@ -40,20 +39,11 @@ ControlPanel::ControlPanel(QWidget *parent)
     m_tabs = new QTabWidget(m_splitter);
     m_tabs->setDocumentMode(true);
 
-    // Tab "Danh sách": bảng quỹ đạo, cột dựng sẵn để giai đoạn sau đổ dữ liệu.
-    auto *trackTable = new QTableWidget(0, 6, m_tabs);
-    trackTable->setHorizontalHeaderLabels({QStringLiteral("Số hiệu"), QStringLiteral("Phương vị"),
-                                           QStringLiteral("Cự ly"), QStringLiteral("Độ cao"),
-                                           QStringLiteral("Tốc độ"), QStringLiteral("Hướng")});
-    trackTable->verticalHeader()->setVisible(false);
-    trackTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    trackTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    trackTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-
+    m_trackListTab = new TrackListTab(m_tabs);
     m_controlTab = new ControlTab(m_tabs);
     m_settingsTab = new SettingsTab(m_tabs);
 
-    m_tabs->addTab(trackTable, QStringLiteral("Danh sách"));
+    m_tabs->addTab(m_trackListTab, QStringLiteral("Danh sách"));
     m_tabs->addTab(m_controlTab, QStringLiteral("Điều khiển"));
     m_tabs->addTab(placeholderTab(QStringLiteral("Ghi lưu và tái hiện dữ liệu\n(giai đoạn sau)"), m_tabs),
                    QStringLiteral("Ghi lưu"));

@@ -5,6 +5,7 @@
 class AmplitudeView;
 class ControlTab;
 class SettingsTab;
+class TrackListTab;
 class QSplitter;
 class QTabWidget;
 
@@ -17,6 +18,7 @@ public:
 
     SettingsTab *settingsTab() const { return m_settingsTab; }
     ControlTab *controlTab() const { return m_controlTab; }
+    TrackListTab *trackListTab() const { return m_trackListTab; }
     AmplitudeView *amplitudeView() const { return m_amplitude; }
 
 private:
@@ -24,5 +26,6 @@ private:
     QSplitter *m_splitter = nullptr;
     SettingsTab *m_settingsTab = nullptr;
     ControlTab *m_controlTab = nullptr;
+    TrackListTab *m_trackListTab = nullptr;
     AmplitudeView *m_amplitude = nullptr;
 };

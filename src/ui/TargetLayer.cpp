@@ -40,14 +40,20 @@ QString mode(quint32 retmode, bool *bold)
 QStringList details(quint32 retmode, quint32 commander, quint32 flightid,
                     quint32 altitude, quint32 fuel)
 {
+    return held(retmode == 3 ? commander : 0, retmode == 4 ? flightid : 0,
+                retmode == 6 ? altitude : 0, retmode == 6 ? fuel : 0);
+}
+
+QStringList held(quint32 commander, quint32 flightid, quint32 altitude, quint32 fuel)
+{
     QStringList out;
-    if (retmode == 3 && commander == 1)
+    if (commander == 1)
         out << QStringLiteral("Tốp chỉ huy");
-    if (retmode == 4 && flightid > 0)
+    if (flightid > 0)
         out << QStringLiteral("Số hiệu: %1").arg(flightid);
-    if (retmode == 6 && altitude > 0)
+    if (altitude > 0)
         out << QStringLiteral("Độ cao: %1m").arg(altitude);
-    if (retmode == 6 && fuel > 0)
+    if (fuel > 0)
         out << QStringLiteral("Nhiên liệu: %1%").arg(fuel);
     return out;
 }

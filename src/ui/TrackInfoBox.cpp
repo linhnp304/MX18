@@ -107,8 +107,8 @@ void TrackInfoBox::setTrack(const TrackEntry &t)
             html += QStringLiteral("<tr><td colspan='2' align='center' style='color:#e6edf4'>%1</td></tr>")
                         .arg(bold ? QStringLiteral("<b>%1</b>").arg(m) : m);
         }
-        for (const QString &d : IffText::details(mode, t.f[Track::IffCommander], t.f[Track::IffFlightid],
-                                                 t.f[Track::IffAltitude], t.f[Track::IffFuellevel])) {
+        for (const QString &d : IffText::held(t.f[Track::IffCommander], t.f[Track::IffFlightid],
+                                              t.f[Track::IffAltitude], t.f[Track::IffFuellevel])) {
             html += QStringLiteral("<tr><td colspan='2' style='color:#e6edf4; padding-left:14px'>%1</td></tr>")
                         .arg(d);
         }

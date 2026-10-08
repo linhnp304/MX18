@@ -27,6 +27,9 @@ struct TrackEntry {
     // vết được vẽ là việc của lớp hiển thị (tab "Cài đặt", hoặc toàn bộ khi theo dõi).
     QVector<TrackPoint> history;
     qint64 updatedMs = 0;  // theo đồng hồ đơn điệu của TrackStore
+    // Time of Day ASTERIX (1/128 s) lúc nhận vị trí hiện tại. Hợp nhất điểm dấu
+    // gửi lại quỹ đạo với vị trí cũ, nên phải kèm đúng giờ của vị trí đó.
+    quint32 positionTod = 0;
     bool followed = false;
     // Độ cao radar đo (I048/110) nếu P18M có gửi; TRACK không có trường này
     // nhưng SCH-VQ cần khi quỹ đạo chưa có độ cao từ nhận dạng MH.
@@ -51,6 +54,7 @@ public:
         RemovedByUser,         // menu "Xóa", nút xoá của tab "Danh sách"
         RemovedExtrapolated,   // bộ bám MH ngoại suy đủ số vòng
         RemovedDisconnected,   // dừng kết nối: xoá sạch, không báo đi đâu
+        RemovedListCleared,    // nút "Xóa danh sách quỹ đạo": như người dùng xoá từng quỹ đạo
     };
 
     explicit TrackStore(QObject *parent = nullptr);
@@ -61,6 +65,12 @@ public:
     // Bản ghi CAT048 từ X18-VQ. Bản ghi không có Track Number là điểm dấu radar
     // nên bị bỏ (như SW0); TRE = 1 thì xoá ngay quỹ đạo đó cùng vết.
     void applyVq(const Asterix::Cat048 &report);
+
+    // Hợp nhất điểm dấu MH (đủ Plot::Count trường) vào quỹ đạo X18-VQ nằm trong
+    // cửa sổ ± halfAzDeg / ± halfRangeKm quanh điểm dấu (track/PlotMerge). Trả
+    // về true và id quỹ đạo nếu có quỹ đạo nhận; chỉ báo trackUpdated (gửi
+    // SCH-VQ) khi nhận dạng hoặc loại quỹ đạo thật sự đổi.
+    bool mergePlot(const quint32 *plot, double halfAzDeg, double halfRangeKm, quint32 *mergedId = nullptr);
 
     bool remove(quint32 id, RemoveReason reason);
     void removeAll(RemoveReason reason);

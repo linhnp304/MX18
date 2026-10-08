@@ -22,6 +22,7 @@ class NetworkPopup;
 class NotifyPopup;
 class PlaceholderPopup;
 class PingService;
+class PlotListWindow;
 class RadarCenterPopup;
 class RawIqStore;
 class TrackStore;
@@ -69,6 +70,7 @@ private:
     void sendRebootMh();
     void openEngineerWindow();
     void openViewIqWindow();
+    void openPlotListWindow();
 
     void togglePopup(int id);
     void openPopup(int id);
@@ -97,6 +99,8 @@ private:
     EngineerWindow *m_engineerWindow = nullptr;
     // Tạo khi mở lần đầu: phần lớn phiên làm việc không ai vẽ cánh sóng.
     ViewIqWindow *m_viewIqWindow = nullptr;
+    // Tạo sẵn: nhật ký điểm dấu MH ghi cả lúc cửa sổ đang đóng.
+    PlotListWindow *m_plotWindow = nullptr;
 
     PingService *m_ping = nullptr;
 
@@ -113,6 +117,7 @@ private:
     VqSender *m_vq = nullptr;
     bool m_vqTrackNoted = false;
     bool m_plotNoted = false;
+    bool m_mergeNoted = false;
     bool m_alarmNoted = false;
     quint32 m_scnPlotsSent = 0;
 
