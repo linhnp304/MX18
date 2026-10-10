@@ -66,6 +66,19 @@ void LinkWorker::record(const char *data, int size)
         m_record->push(m_recordStream, data, size);
 }
 
+void LinkWorker::inject(const QByteArray &raw)
+{
+    if (m_format == LinkEntry::ScnText)
+        return;
+    if (m_format == LinkEntry::RawIq) {
+        if (m_rawSink)
+            m_rawSink->feed(raw.constData(), int(raw.size()), m_bigEndian);
+        return;
+    }
+    // Gói TCP đã được cắt theo length lúc ghi nên đi chung đường với datagram.
+    handleDatagram(raw);
+}
+
 void LinkWorker::begin()
 {
     if (m_format == LinkEntry::RawIq && !m_rawSink) {
@@ -504,13 +517,15 @@ LinkManager::~LinkManager()
     stop();
 }
 
-void LinkManager::start()
+void LinkManager::start(const QStringList &only)
 {
     if (isRunning())
         return;
 
     for (int i = 0; i < m_config.entries.size(); ++i) {
         const LinkEntry &entry = m_config.entries.at(i);
+        if (!only.isEmpty() && !only.contains(entry.category))
+            continue;
         auto *thread = new QThread(this);
         thread->setObjectName(QStringLiteral("link-%1").arg(entry.category));
 

@@ -18,8 +18,11 @@ public:
 
     void setConnected(bool connected);
     bool isConnected() const { return m_connected; }
-    // Đang ghi lưu hoặc đang phát lại: khoá nút "Thoát phần mềm".
+    // Đang ghi lưu: khoá nút "Thoát phần mềm".
     void setRecordBusy(bool busy);
+    // Đang phát lại: khoá cả "Kết nối hệ thống" (phát lại dùng chung đường giải
+    // mã với dữ liệu thật) lẫn "Thoát phần mềm".
+    void setReplayBusy(bool busy);
 
 signals:
     void displayChanged();       // panel 1 phải vẽ lại
@@ -54,5 +57,6 @@ private:
 
     bool m_connected = false;
     bool m_recordBusy = false;
+    bool m_replayBusy = false;
     bool m_loading = false;
 };

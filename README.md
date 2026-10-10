@@ -102,7 +102,7 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
   sổ dự đoán thì ngoại suy, quá 3 vòng thì xoá. Chu kỳ quét đo theo đường quét
   VIDEO_I (mặc định 10 giây). Tham số ở các khoá `mh_*` của `setupadmin.json`.
 
-**Giai đoạn 7** — chỉnh theo hệ thống thật, ghi lưu / phát lại (đang làm):
+**Giai đoạn 7** — chỉnh theo hệ thống thật, ghi lưu / phát lại:
 
 - Gói nhận về **không còn tin trường `length`** (máy XL MH để 0 hoặc ghi sai): chỉ
   kiểm tra header và category, lấy cả datagram; dài hơn đặc tả thì bỏ phần thừa,
@@ -115,7 +115,7 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
 - Hệ số **StDiv / StAdd** cho các trường nguồn và công suất của STATUS_MH
   (`statuserror.json`): giá trị hiển thị = giá trị / StDiv + StAdd, rồi mới so ngưỡng.
 - Nút **"Thoát phần mềm"** nằm dưới cùng tab "Cài đặt", chữ đỏ đậm; bị khoá khi
-  đang kết nối hoặc đang ghi lưu.
+  đang kết nối, đang ghi lưu hoặc đang phát lại.
 - **Ghi lưu** (tab "Ghi lưu"): nút "Bắt đầu ghi lưu" / "Dừng ghi lưu" ghi mọi gói
   nhận được vào `./records/yyyy/MM/yyyyMMdd_HHmmss.rec` trên một luồng riêng (nhịp
   250 ms), cập nhật tên file, thời gian ghi, số gói, dung lượng mỗi 200 ms. Tự ngắt
@@ -123,6 +123,15 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
   `./records` vượt `total_cap` (mỗi file xoá một dòng trong
   `./records/deletted_history.log`). Lỗi ghi (ổ đầy, không có quyền) chỉ dừng ghi
   lưu và báo `[Lỗi]`, phần mềm vẫn chạy.
+- **Phát lại** (tab "Ghi lưu", nhóm "Phát lại"): danh sách file ghi lưu (quét
+  header mỗi lần chạy, mới nhất trước; file ghi dở vì mất điện vẫn phát được tới
+  khối cuối còn nguyên), nút "Phát lại" / "Dừng phát lại", "Tạm dừng" / "Tiếp tục",
+  thanh trượt để tua, tốc độ 0.5x–8x. Chỉ phát lại được khi đã dừng kết nối, đang
+  khoá điều khiển và không ghi lưu. Gói phát lại đi đúng đường giải mã như lúc nhận
+  thật (theo bảng dòng ghi trong file), nên panel 1, cửa sổ "Trạng thái MH", tab
+  "Điều khiển" và cửa sổ kỹ sư bám theo dữ liệu phát lại; dừng thì trả lại các giá
+  trị điều khiển trước khi phát lại. Hai ô "Gửi thông tin phát lại đến X18-SCN /
+  SCH-VQ" chỉ mở riêng dòng gửi `X18-SCN-S` / `SCH-VQ`, gói gửi đi mang giờ hiện tại.
 
 ## Yêu cầu biên dịch
 
@@ -228,8 +237,8 @@ phải chạy lại phần mềm.
   mặc định **little-endian** như hệ thống MH thật, đổi được bằng khoá `big_endian`
   của từng dòng trong `connect.json`. Các luồng X18-* không theo khung này:
   ASTERIX luôn big-endian, gói "Cf" của SCN luôn little-endian.
-  `checksum` hiện gán 0 và chưa kiểm tra. Gói có `length` = 0 (máy XL MH không
-  điền) được hiểu là cả datagram.
+  `checksum` hiện gán 0 và chưa kiểm tra. Gói nhận về không dựa vào `length`
+  (máy XL MH để 0): lấy cả datagram, chỉ TCP mới cắt theo `length`.
 - **Video**: đường quét MH đến khoảng 400 gói/giây. Mỗi tia được vẽ bằng một
   phép biến đổi quay + giãn của một ảnh 600×1 điểm — rẻ hơn nhiều so với 600 đoạn
   thẳng cho mỗi tia — vào một lớp ARGB riêng; lớp này mờ dần bằng phép **trừ**
@@ -240,3 +249,8 @@ phải chạy lại phần mềm.
   một cặp Sum/Sub cho mỗi phương vị encoder); cửa sổ lấy bản chụp ở nhịp 25
   hình/giây. Giao diện vẽ không kịp thì gói bị gói sau đè lên chứ bộ nhớ không
   phình ra. Thứ tự byte theo khoá `big_endian` của dòng `Data-RAW`.
+- **Đồng hồ dữ liệu**: xoá quỹ đạo theo giờ, bộ bám MH (chu kỳ quét, vận tốc),
+  điểm dấu hết hạn, video mờ dần và chu kỳ trong North marker đều đọc một đồng hồ
+  chung. Lúc phát lại đồng hồ này bám thời điểm của gói vừa phát: chạy 8x thì
+  nhanh theo, tạm dừng thì đứng, tua thì không lùi (phần đang vẽ được xoá rồi dựng
+  lại từ mốc mới).

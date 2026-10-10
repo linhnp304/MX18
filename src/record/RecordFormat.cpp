@@ -3,10 +3,18 @@
 #include "net/LinkConfig.h"
 #include "proto/Dataframe.h"
 
+#include <QDir>
+#include <QDirIterator>
+#include <QFile>
+#include <QFileInfo>
 #include <QIODevice>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QRegularExpression>
+
+#include <algorithm>
+#include <utility> // std::as_const — MSVC không kéo theo qua header Qt
 
 namespace RecordFormat {
 
@@ -263,6 +271,99 @@ bool walkBlocks(QIODevice *file, QVector<BlockRef> *blocks, qint64 *validBytes,
     if (recount)
         recount->f[FBlocks] = blockCount;
     return true;
+}
+
+quint32 lastPacketMs(QIODevice *file, const BlockRef &block)
+{
+    if (!file->seek(block.offset + kBlockHeadBytes))
+        return 0;
+    const QByteArray body = file->read(block.bytes - kBlockHeadBytes);
+    int offset = 0;
+    Packet pk;
+    quint32 last = block.firstMs;
+    while (nextPacket(body, &offset, &pk))
+        last = pk.ms;
+    return last;
+}
+
+bool summarize(const QString &path, Summary *out, QString *error)
+{
+    // Không đệm: đi dọc khối chỉ đọc 16 byte mỗi khối, đọc có đệm thì mỗi lần
+    // nhảy kéo theo cả 16 KB.
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Unbuffered)) {
+        if (error)
+            *error = file.errorString();
+        return false;
+    }
+    const QByteArray headBytes = file.read(kHeaderBytes);
+    Header header;
+    if (!header.decode(headBytes.constData(), int(headBytes.size()))) {
+        if (error)
+            *error = QStringLiteral("không phải file ghi lưu MX18");
+        return false;
+    }
+
+    out->path = path;
+    out->bytes = quint64(file.size());
+    out->start = header.startTime();
+    out->closed = header.closed();
+    if (out->closed) {
+        out->end = header.endTime();
+        out->durationMs = header.recordedMs();
+        out->packets = header.f[FTotal];
+    } else {
+        QVector<BlockRef> blocks;
+        walkBlocks(&file, &blocks, nullptr, nullptr, error);
+        quint64 packets = 0;
+        for (const BlockRef &b : std::as_const(blocks))
+            packets += b.packets;
+        // Khối đầu chỉ có khối mô tả.
+        out->packets = blocks.isEmpty() ? 0 : packets - 1;
+        out->durationMs = blocks.size() > 1 ? lastPacketMs(&file, blocks.constLast()) : 0;
+        out->end = out->start.addMSecs(out->durationMs);
+    }
+
+    // Tiêu đề theo tên file như step-07; hậu tố _2, _3… (ghi lại trong cùng một
+    // giây) giữ trong ngoặc để hai file không trùng tên hiển thị.
+    const QString base = QFileInfo(path).completeBaseName();
+    static const QRegularExpression re(
+        QStringLiteral("^(\\d{4})(\\d{2})(\\d{2})_(\\d{2})(\\d{2})(\\d{2})(?:_(\\d+))?$"));
+    const QRegularExpressionMatch m = re.match(base);
+    if (m.hasMatch()) {
+        out->title = QStringLiteral("%1/%2/%3 %4:%5:%6")
+                         .arg(m.captured(1), m.captured(2), m.captured(3), m.captured(4), m.captured(5),
+                              m.captured(6));
+        if (!m.captured(7).isEmpty())
+            out->title += QStringLiteral(" (%1)").arg(m.captured(7));
+    } else {
+        out->title = base;
+    }
+    return true;
+}
+
+QVector<Summary> scanRecords(const QString &root, QStringList *errors)
+{
+    QVector<Summary> list;
+    const QDir rootDir(root);
+    QDirIterator it(root, {QStringLiteral("*.rec")}, QDir::Files, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString path = it.next();
+        Summary s;
+        QString error;
+        if (!summarize(path, &s, &error)) {
+            if (errors)
+                errors->append(QStringLiteral("./records/%1: %2").arg(rootDir.relativeFilePath(path), error));
+            continue;
+        }
+        s.relName = rootDir.relativeFilePath(path);
+        list.append(s);
+    }
+    // Tên file theo giờ bắt đầu nên so tên là so thời gian; cũ nhất về cuối.
+    std::sort(list.begin(), list.end(), [](const Summary &a, const Summary &b) {
+        return QFileInfo(a.path).fileName() > QFileInfo(b.path).fileName();
+    });
+    return list;
 }
 
 } // namespace RecordFormat

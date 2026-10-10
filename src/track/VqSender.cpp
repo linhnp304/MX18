@@ -1,12 +1,12 @@
 #include "track/VqSender.h"
 
+#include "core/DataClock.h"
 #include "proto/Packets.h"
 #include "track/TrackStore.h"
 
 VqSender::VqSender(QObject *parent)
     : QObject(parent)
 {
-    m_clock.start();
 }
 
 void VqSender::sendTrack(const TrackEntry &t, bool endOfTrack)
@@ -78,7 +78,7 @@ void VqSender::sweep(int source, quint32 azimuth4096)
 
     // North marker khi vừa bước vào dải 0 … 22,5°.
     if ((sector >> 4) != (prev >> 4) && (sector >> 4) == 0) {
-        const qint64 now = m_clock.elapsed();
+        const qint64 now = DataClock::nowMs();
         double period = kMaxPeriodS;
         if (m_hasNorth) {
             // Hai lần qua Bắc có thể rơi vào hai sector khác nhau trong dải đầu:

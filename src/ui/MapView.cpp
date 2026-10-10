@@ -1,6 +1,7 @@
 #include "ui/MapView.h"
 
 #include "core/AppPaths.h"
+#include "core/DataClock.h"
 #include "core/Settings.h"
 #include "map/MapData.h"
 #include "proto/Packets.h"
@@ -484,7 +485,7 @@ void MapView::setRadarSweep(double azimuthDeg)
     m_sweepRd = azimuthDeg;
     m_hasSweepRd = true;
     if (!m_videoTimer->isActive()) {
-        m_fadeClock.start();
+        m_fadeLastMs = DataClock::nowMs();
         m_videoTimer->start();
     }
 }
@@ -499,7 +500,7 @@ void MapView::setMhSweep(double azimuthDeg, const QByteArray &video)
         m_pendingSpokes.append(Spoke{azimuthDeg, video});
     }
     if (!m_videoTimer->isActive()) {
-        m_fadeClock.start();
+        m_fadeLastMs = DataClock::nowMs();
         m_videoTimer->start();
     }
 }
@@ -566,8 +567,9 @@ void MapView::fadeVideoLayer(double seconds)
 void MapView::flushVideo()
 {
     ensureVideoLayer();
-    const double dt = m_fadeClock.isValid() ? m_fadeClock.restart() / 1000.0
-                                            : kVideoFrameMs / 1000.0;
+    const qint64 now = DataClock::nowMs();
+    const double dt = m_fadeLastMs >= 0 ? (now - m_fadeLastMs) / 1000.0 : kVideoFrameMs / 1000.0;
+    m_fadeLastMs = now;
 
     if (!m_pendingSpokes.isEmpty()) {
         QPainter p(&m_videoLayer);

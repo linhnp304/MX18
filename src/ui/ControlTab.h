@@ -29,6 +29,17 @@ public:
     // Mở khoá điều khiển chỉ có nghĩa khi đang kết nối hệ thống.
     void setSystemConnected(bool connected);
 
+    // Phát lại (step-07): khoá nút "Mở khóa điều khiển", các điều khiển bám gói
+    // phản hồi phát lại như lúc khoá. Dừng phát lại thì trả đúng giá trị chụp
+    // trước đó và bỏ mọi dấu phản hồi.
+    struct Snapshot {
+        quint32 at[CmdAt::Count];
+        quint32 user[CmdUser::Count];
+    };
+    Snapshot snapshot() const;
+    void restore(const Snapshot &s);
+    void setReplaying(bool replaying);
+
     const quint32 *cmdAtFields() const { return m_at; }
     const quint32 *cmdUserFields() const { return m_user; }
 

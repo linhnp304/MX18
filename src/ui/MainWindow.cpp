@@ -8,6 +8,7 @@
 #include "proto/Dataframe.h"
 #include "proto/Packets.h"
 #include "record/Recorder.h"
+#include "record/Replayer.h"
 #include "track/TrackStore.h"
 #include "track/VqSender.h"
 #include "ui/AmplitudeView.h"
@@ -38,6 +39,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <utility> // std::as_const — MSVC không kéo theo qua header Qt
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -54,12 +56,15 @@ MainWindow::MainWindow(QWidget *parent)
 
     notify(QStringLiteral("Khởi động phần mềm MX18."));
     reportConfigErrors();
+    refreshRecordList();
 }
 
 MainWindow::~MainWindow()
 {
     if (m_ping)
         m_ping->stop();
+    if (m_replayer)
+        m_replayer->stop();
     if (m_links)
         m_links->stop();
     // Sau khi các luồng nhận đã dừng: không còn gói nào đẩy vào, bộ đệm ghi
@@ -145,6 +150,8 @@ void MainWindow::buildUi()
     m_recorder->setStreams(m_linkConfig);
     m_links->setRecordSink(m_recorder->sink());
     m_controlPanel->recordTab()->setRecorder(m_recorder);
+    m_replayer = new Replayer(m_rawIq, this);
+    m_controlPanel->recordTab()->setReplayer(m_replayer);
 
     const Setups &setups = Settings::instance().setups();
     m_tracks = new TrackStore(this);
@@ -205,6 +212,27 @@ void MainWindow::wireSignals()
         notify(text, true);
         m_controlPanel->recordTab()->setRecording(false);
         m_controlPanel->settingsTab()->setRecordBusy(false);
+        refreshRecordList();
+    });
+
+    RecordTab *rec = m_controlPanel->recordTab();
+    connect(rec, &RecordTab::replayToggled, this, &MainWindow::setReplaying);
+    connect(rec, &RecordTab::pauseToggled, m_replayer, &Replayer::setPaused);
+    connect(rec, &RecordTab::seekRequested, m_replayer, &Replayer::seek);
+    connect(rec, &RecordTab::rateChanged, m_replayer, &Replayer::setRate);
+    connect(rec, &RecordTab::sendOptionsChanged, this, [this] {
+        if (m_replaying)
+            startReplayLinks();
+    });
+    connect(m_replayer, &Replayer::frameReceived, this, &MainWindow::onFrame);
+    connect(m_replayer, &Replayer::scnCfReceived, this, &MainWindow::onScnCf);
+    connect(m_replayer, &Replayer::asterixReceived, this, &MainWindow::onAsterix);
+    connect(m_replayer, &Replayer::message, this,
+            [this](const QString &text, bool isError) { notify(text, isError); });
+    connect(m_replayer, &Replayer::seeked, this, &MainWindow::onReplaySeeked);
+    connect(m_replayer, &Replayer::reachedEnd, this, [this] {
+        m_controlPanel->recordTab()->setPaused(true);
+        notify(QStringLiteral("Phát lại: đã hết file, bấm \"Tiếp tục\" để phát lại từ đầu."));
     });
 
     connect(m_colorDialog, &ColorSetupDialog::applied, this, [this] {
@@ -776,16 +804,7 @@ void MainWindow::setConnected(bool connected)
         m_angleTimer->start();
     } else {
         m_links->stop();
-        m_angleTimer->stop();
-        m_hasAngles = false;
-        m_mapView->clearVideo();
-        m_controlPanel->amplitudeView()->clearTrace();
-        m_mhPopup->clearStatus();
-        m_engineerWindow->clearBack();
-        m_tracks->removeAll(TrackStore::RemovedDisconnected);
-        m_mapView->clearTargets();
-        m_vq->resetSweep();
-        m_statusPanel->setSweepAngles(false, 0.0, 0.0);
+        clearDataView();
     }
 
     // Chưa kết nối thì các trạng thái MH/SCN/SVR để màu trắng xám.
@@ -793,6 +812,30 @@ void MainWindow::setConnected(bool connected)
     m_statusPanel->setPopupState(StatusPanel::MhStatus, c);
     m_statusPanel->setPopupState(StatusPanel::SvrStatus, c);
     // SCN chỉ xanh khi PC đã kết nối vào (onScnStatus); đang chờ thì vàng.
+    resetSession();
+    m_statusPanel->setPopupState(StatusPanel::ScnStatus, connected ? StatusPanel::Warn : StatusPanel::Idle);
+    showScnStatus();
+
+    notify(connected ? QStringLiteral("Bắt đầu nhận/gửi dữ liệu.")
+                     : QStringLiteral("Đã dừng nhận/gửi dữ liệu."));
+}
+
+void MainWindow::clearDataView()
+{
+    m_angleTimer->stop();
+    m_hasAngles = false;
+    m_mapView->clearVideo();
+    m_controlPanel->amplitudeView()->clearTrace();
+    m_mhPopup->clearStatus();
+    m_engineerWindow->clearBack();
+    m_tracks->removeAll(TrackStore::RemovedDisconnected);
+    m_mapView->clearTargets();
+    m_vq->resetSweep();
+    m_statusPanel->setSweepAngles(false, 0.0, 0.0);
+}
+
+void MainWindow::resetSession()
+{
     m_scnStatus = ScnText::Status();
     m_scnLastCf.clear();
     m_scnCfCount = 0;
@@ -802,11 +845,6 @@ void MainWindow::setConnected(bool connected)
     m_mergeNoted = false;
     m_mhTrackNoted = false;
     m_alarmNoted = false;
-    m_statusPanel->setPopupState(StatusPanel::ScnStatus, connected ? StatusPanel::Warn : StatusPanel::Idle);
-    showScnStatus();
-
-    notify(connected ? QStringLiteral("Bắt đầu nhận/gửi dữ liệu.")
-                     : QStringLiteral("Đã dừng nhận/gửi dữ liệu."));
 }
 
 // ------------------------------------------------------------- luồng SCN
@@ -832,13 +870,15 @@ void MainWindow::onScnCf(const ScnCf::Message &message)
 
 void MainWindow::showScnStatus()
 {
-    if (!m_connected) {
+    if (!m_connected && !m_replaying) {
         m_scnPopup->setNote(QStringLiteral("Chưa kết nối hệ thống."), false);
         return;
     }
     const ScnText::Status &s = m_scnStatus;
     QStringList lines;
-    if (s.connected)
+    if (m_replaying)
+        lines << QStringLiteral("Đang phát lại: không mở phiên TCP với PC");
+    else if (s.connected)
         lines << QStringLiteral("TCP: PC %1 đã kết nối").arg(s.peer);
     else
         lines << (s.listening ? QStringLiteral("TCP: đang chờ PC kết nối")
@@ -873,6 +913,7 @@ void MainWindow::setRecording(bool recording)
                        .arg(double(st.bytes) / (1024.0 * 1024.0), 0, 'f', 1));
         tab->setRecording(false);
         m_controlPanel->settingsTab()->setRecordBusy(false);
+        refreshRecordList();
         return;
     }
 
@@ -898,10 +939,153 @@ void MainWindow::setRecording(bool recording)
                                 : QStringLiteral(" Chưa kết nối hệ thống: file chỉ có gói tin sau khi kết nối.")));
 }
 
+// ------------------------------------------------------------- phát lại
+
+void MainWindow::refreshRecordList()
+{
+    // File hỏng (ghi lỗi ngay lúc tạo, bị cắt cụt) chỉ bị bỏ khỏi danh sách.
+    for (const QString &e : m_controlPanel->recordTab()->refreshRecordList())
+        notify(QStringLiteral("Bỏ qua file ghi lưu không đọc được: %1.").arg(e));
+}
+
+void MainWindow::setReplaying(bool replaying)
+{
+    if (!replaying) {
+        stopReplay();
+        return;
+    }
+    if (m_replaying)
+        return;
+
+    // Phát lại đi chung đường hiển thị với dữ liệu thật nên phải đóng hết cổng
+    // nhận, khoá điều khiển (không lệnh nào được gửi theo trạng thái phát lại)
+    // và không ghi lưu (step-07).
+    QStringList reasons;
+    if (m_controlPanel->controlTab()->isUnlocked() || !m_engineerWindow->isLocked())
+        reasons << QStringLiteral("Khóa điều khiển (tab \"Điều khiển\" và cửa sổ mức kỹ sư)");
+    if (m_connected)
+        reasons << QStringLiteral("Dừng kết nối hệ thống (tab \"Cài đặt\")");
+    if (m_recorder->isRecording())
+        reasons << QStringLiteral("Dừng ghi lưu");
+    if (!reasons.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Chưa phát lại được"),
+                             QStringLiteral("Trước khi phát lại cần:\n• %1").arg(reasons.join(QStringLiteral("\n• "))));
+        return;
+    }
+    RecordTab *tab = m_controlPanel->recordTab();
+    const QString path = tab->selectedFile();
+    if (path.isEmpty()) {
+        notify(QStringLiteral("Chưa có file ghi lưu để phát lại."), true);
+        return;
+    }
+
+    m_ctrlSnapshot = m_controlPanel->controlTab()->snapshot();
+    m_engineerSnapshot = m_engineerWindow->snapshot();
+    m_gpsSaved = m_hasGps;
+    m_gpsLatSaved = m_gpsLat;
+    m_gpsLonSaved = m_gpsLon;
+    clearDataView();
+    resetSession();
+
+    m_replayer->setRate(tab->rate());
+    QString error;
+    if (!m_replayer->start(path, &error)) {
+        notify(QStringLiteral("Không phát lại được ./records/%1: %2.").arg(tab->selectedName(), error), true);
+        return;
+    }
+    m_replaying = true;
+    m_controlPanel->controlTab()->setReplaying(true);
+    m_engineerWindow->setReplaying(true);
+    m_controlPanel->settingsTab()->setReplayBusy(true);
+    tab->setReplaying(true);
+    m_angleTimer->start();
+    startReplayLinks();
+    showScnStatus();
+
+    const ReplayStats st = m_replayer->stats();
+    notify(QStringLiteral("Bắt đầu phát lại ./records/%1 (%2, tốc độ %3x).")
+               .arg(tab->selectedName())
+               .arg(QDateTime::fromMSecsSinceEpoch(st.wallMs).toString(QStringLiteral("yyyy/MM/dd HH:mm:ss")))
+               .arg(tab->rate()));
+}
+
+void MainWindow::stopReplay()
+{
+    if (!m_replaying)
+        return;
+    m_replayer->stop();
+    // Bản tin cuối của các quỹ đạo (nếu đang gửi SCH-VQ) xếp hàng trước lệnh
+    // đóng dòng gửi nên vẫn đi ra được.
+    m_tracks->removeAll(TrackStore::RemovedReplay);
+    m_links->stop();
+    clearDataView();
+    resetSession();
+
+    m_controlPanel->controlTab()->restore(m_ctrlSnapshot);
+    m_engineerWindow->restore(m_engineerSnapshot);
+    m_hasGps = m_gpsSaved;
+    m_gpsLat = m_gpsLatSaved;
+    m_gpsLon = m_gpsLonSaved;
+
+    m_replaying = false;
+    m_controlPanel->controlTab()->setReplaying(false);
+    m_engineerWindow->setReplaying(false);
+    m_controlPanel->settingsTab()->setReplayBusy(false);
+    m_controlPanel->recordTab()->setReplaying(false);
+    m_statusPanel->setPopupState(StatusPanel::MhStatus, StatusPanel::Idle);
+    m_statusPanel->setPopupState(StatusPanel::ScnStatus, StatusPanel::Idle);
+    showScnStatus();
+    notify(QStringLiteral("Đã dừng phát lại, trả lại các giá trị điều khiển trước khi phát lại."));
+}
+
+void MainWindow::onReplaySeeked()
+{
+    // Đồng hồ dữ liệu không lùi: phần đang vẽ bỏ hết rồi dựng lại từ dữ liệu
+    // của mốc mới.
+    m_tracks->removeAll(TrackStore::RemovedReplay);
+    m_mapView->clearVideo();
+    m_mapView->clearTargets();
+    m_controlPanel->amplitudeView()->clearTrace();
+    m_vq->resetSweep();
+}
+
+void MainWindow::startReplayLinks()
+{
+    // Chỉ mở riêng dòng gửi được chọn, các dòng nhận vẫn đóng (anh Linh chốt);
+    // mã gửi điểm dấu (Cf) / quỹ đạo (ASTERIX) chạy y như lúc thật, mang giờ
+    // hiện tại.
+    RecordTab *tab = m_controlPanel->recordTab();
+    QStringList lines;
+    if (tab->sendToScn())
+        lines << QStringLiteral("X18-SCN-S");
+    if (tab->sendToVq())
+        lines << QStringLiteral("SCH-VQ");
+    const bool wasRunning = m_links->isRunning();
+    m_links->stop();
+    m_vq->resetSweep();
+    if (lines.isEmpty()) {
+        if (wasRunning)
+            notify(QStringLiteral("Phát lại: ngừng gửi thông tin phát lại."));
+        return;
+    }
+    for (const QString &name : std::as_const(lines)) {
+        if (!m_linkConfig.find(name))
+            notify(QStringLiteral("connect.json không có dòng \"%1\", không gửi được thông tin phát lại.").arg(name),
+                   true);
+    }
+    m_links->start(lines);
+    notify(QStringLiteral("Phát lại: gửi thông tin phát lại qua %1 (giờ hiện tại).")
+               .arg(lines.join(QStringLiteral(", "))));
+}
+
 void MainWindow::requestExit()
 {
     if (m_connected) {
         notify(QStringLiteral("Phải dừng kết nối trước khi thoát phần mềm."), true);
+        return;
+    }
+    if (m_replaying) {
+        notify(QStringLiteral("Phải dừng phát lại trước khi thoát phần mềm."), true);
         return;
     }
     if (m_recorder->isRecording()) {
@@ -945,6 +1129,12 @@ void MainWindow::closeEvent(QCloseEvent *event)
     if (m_recorder->isRecording()) {
         QMessageBox::warning(this, QStringLiteral("Đang ghi lưu"),
                              QStringLiteral("Phải dừng ghi lưu trước khi thoát phần mềm."));
+        event->ignore();
+        return;
+    }
+    if (m_replaying) {
+        QMessageBox::warning(this, QStringLiteral("Đang phát lại"),
+                             QStringLiteral("Phải dừng phát lại trước khi thoát phần mềm."));
         event->ignore();
         return;
     }

@@ -487,8 +487,10 @@ void ControlTab::setUnlocked(bool unlocked)
     m_lockBtn->setText(unlocked ? QStringLiteral("Khóa điều khiển")
                                 : QStringLiteral("Mở khóa điều khiển"));
     // Đổi màu chữ để nhìn lướt cũng biết đang khoá hay đang mở.
-    m_lockBtn->setStyleSheet(unlocked ? QStringLiteral("color:#ff8a5c;font-weight:bold;")
-                                      : QStringLiteral("color:#7ee08a;font-weight:bold;"));
+    // Kèm luật :disabled: lúc phát lại nút bị khoá phải trông là khoá.
+    m_lockBtn->setStyleSheet(QStringLiteral("QPushButton { color:%1; font-weight:bold; }"
+                                            "QPushButton:disabled { color:#5d666f; }")
+                                 .arg(unlocked ? QStringLiteral("#ff8a5c") : QStringLiteral("#7ee08a")));
     for (QGroupBox *g : std::as_const(m_groups))
         g->setEnabled(unlocked);
     if (unlocked)
@@ -497,6 +499,44 @@ void ControlTab::setUnlocked(bool unlocked)
     // chuyển sang đánh dấu đỏ chỗ lệch — cả hai đều nằm trong applyFeedback().
     refreshFeedback();
     emit lockChanged(unlocked);
+}
+
+ControlTab::Snapshot ControlTab::snapshot() const
+{
+    Snapshot s;
+    memcpy(s.at, m_at, sizeof(s.at));
+    memcpy(s.user, m_user, sizeof(s.user));
+    return s;
+}
+
+void ControlTab::restore(const Snapshot &s)
+{
+    memcpy(m_at, s.at, sizeof(m_at));
+    memcpy(m_user, s.user, sizeof(m_user));
+    // Đặt thẳng vào hàng điều khiển (setValue không phát valueChanged) nên không
+    // có lệnh nào bị gửi đi.
+    const auto load = [](const QVector<Binding> &bindings, const quint32 *own) {
+        for (const Binding &b : bindings) {
+            if (b.radio)
+                b.radio->setValue(own[b.fieldA]);
+            else if (b.spin)
+                b.spin->setValue(own[b.fieldA]);
+            else if (b.dual)
+                b.dual->setValues(own[b.fieldA], own[b.fieldB]);
+        }
+    };
+    load(m_atBindings, m_at);
+    load(m_userBindings, m_user);
+    updateModeOptions();
+    updateGiaquayEnabled();
+    clearFeedback();
+}
+
+void ControlTab::setReplaying(bool replaying)
+{
+    if (replaying && m_unlocked)
+        setUnlocked(false);
+    m_lockBtn->setEnabled(!replaying);
 }
 
 void ControlTab::setSystemConnected(bool connected)

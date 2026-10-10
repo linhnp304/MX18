@@ -142,6 +142,11 @@ EngineerWindow::EngineerWindow(QWidget *parent)
     auto *bottom = new QHBoxLayout;
     m_lockBox = new QCheckBox(QStringLiteral("Khóa điều khiển"), this);
     m_lockBox->setChecked(true);
+    // Theme chưa có kiểu cho ô đánh dấu bị khoá; lúc phát lại ô này bị khoá
+    // (chọn sẵn) thì phải trông là không bấm được.
+    m_lockBox->setStyleSheet(QStringLiteral("QCheckBox:disabled { color: #5d666f; }"
+                                            "QCheckBox::indicator:checked:disabled { background: #2a5576; "
+                                            "border-color: #2a5576; }"));
     bottom->addWidget(m_lockBox);
     bottom->addStretch(1);
     auto *closeBtn = new QPushButton(QStringLiteral("Đóng"), this);
@@ -273,6 +278,36 @@ void EngineerWindow::clearBack()
 void EngineerWindow::setLocked(bool locked)
 {
     m_lockBox->setChecked(locked);
+}
+
+bool EngineerWindow::isLocked() const
+{
+    return m_lockBox->isChecked();
+}
+
+QVector<QVector<quint32>> EngineerWindow::snapshot() const
+{
+    QVector<QVector<quint32>> s;
+    for (const CommandBlock *b : std::as_const(m_blocks))
+        s.append(b->fields());
+    return s;
+}
+
+void EngineerWindow::restore(const QVector<QVector<quint32>> &fields)
+{
+    clearBack();
+    for (int i = 0; i < m_blocks.size() && i < fields.size(); ++i) {
+        const QVector<quint32> &f = fields.at(i);
+        for (int k = 0; k < f.size(); ++k)
+            m_blocks.at(i)->setField(k, f.at(k));
+    }
+}
+
+void EngineerWindow::setReplaying(bool replaying)
+{
+    if (replaying)
+        m_lockBox->setChecked(true);
+    m_lockBox->setEnabled(!replaying);
 }
 
 void EngineerWindow::showEvent(QShowEvent *event)

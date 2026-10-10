@@ -5,7 +5,6 @@
 #include "ui/TargetLayer.h"
 
 #include <QByteArray>
-#include <QElapsedTimer>
 #include <QImage>
 #include <QPixmap>
 #include <QPointF>
@@ -115,7 +114,9 @@ private:
     QVector<Spoke> m_pendingSpokes;
     QImage m_videoLayer;
     QTimer *m_videoTimer = nullptr;
-    QElapsedTimer m_fadeClock;
+    // Mờ dần theo đồng hồ dữ liệu: tạm dừng phát lại thì hình đứng nguyên, chạy
+    // 8x thì vệt ngắn lại đúng như vòng quét nhanh lên. -1 = chưa có nhịp nào.
+    qint64 m_fadeLastMs = -1;
     double m_fadeCarry = 0.0;      // phần lẻ của mức alpha phải trừ, dồn sang lần sau
 
     double m_sweepRd = 0.0;

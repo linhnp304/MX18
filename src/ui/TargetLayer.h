@@ -73,7 +73,7 @@ private:
     struct PlotMark {
         quint32 f[Plot::Count];
         QPointF plane;      // km
-        qint64 ms;          // theo m_clock
+        qint64 ms;          // theo DataClock
     };
     struct AlarmRay {
         double headDeg;
@@ -88,5 +88,7 @@ private:
     const TrackStore *m_tracks = nullptr;
     QVector<PlotMark> m_plots;
     QVector<AlarmRay> m_alarms;
+    // Nhịp nhấp nháy tia báo động theo đồng hồ máy: tạm dừng phát lại vẫn nháy
+    // cho thấy đó là báo động.
     QElapsedTimer m_clock;
 };

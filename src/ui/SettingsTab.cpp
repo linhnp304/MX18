@@ -241,9 +241,10 @@ void SettingsTab::setConnected(bool connected)
     m_connected = connected;
     m_connectBtn->setText(connected ? QStringLiteral("Dừng kết nối hệ thống")
                                     : QStringLiteral("Kết nối hệ thống"));
-    m_connectBtn->setStyleSheet(connected
-        ? QStringLiteral("color:#ffd24d;font-weight:bold;")
-        : QStringLiteral("color:#7ee08a;font-weight:bold;"));
+    // Kèm luật :disabled: đang phát lại thì nút bị khoá phải trông là khoá.
+    m_connectBtn->setStyleSheet(QStringLiteral("QPushButton { color:%1; font-weight:bold; }"
+                                               "QPushButton:disabled { color:#5d666f; }")
+                                    .arg(connected ? QStringLiteral("#ffd24d") : QStringLiteral("#7ee08a")));
     updateExitEnabled();
 }
 
@@ -253,9 +254,16 @@ void SettingsTab::setRecordBusy(bool busy)
     updateExitEnabled();
 }
 
+void SettingsTab::setReplayBusy(bool busy)
+{
+    m_replayBusy = busy;
+    m_connectBtn->setEnabled(!busy);
+    updateExitEnabled();
+}
+
 void SettingsTab::updateExitEnabled()
 {
     // Đang kết nối, đang ghi lưu hay đang phát lại thì không cho thoát: phải
     // dừng việc đó trước để file ghi lưu đóng đàng hoàng.
-    m_exitBtn->setEnabled(!m_connected && !m_recordBusy);
+    m_exitBtn->setEnabled(!m_connected && !m_recordBusy && !m_replayBusy);
 }

@@ -1,5 +1,6 @@
 #include "ui/PlotListWindow.h"
 
+#include "core/DataClock.h"
 #include "proto/Packets.h"
 
 #include <QHBoxLayout>
@@ -25,7 +26,7 @@ void PlotListModel::append(const quint32 *f)
     }
     const int row = int(m_rows.size());
     beginInsertRows(QModelIndex(), row, row);
-    m_rows.push_back(Row{m_nextStt++, QTime::currentTime(), f[Plot::Azm], f[Plot::Range], f[Plot::Retmode],
+    m_rows.push_back(Row{m_nextStt++, DataClock::wallNow().time(), f[Plot::Azm], f[Plot::Range], f[Plot::Retmode],
                          f[Plot::Commander], f[Plot::Flightid], f[Plot::Altitude], f[Plot::Fuellevel]});
     endInsertRows();
 }

@@ -1,5 +1,6 @@
 #include "track/TrackStore.h"
 
+#include "core/DataClock.h"
 #include "proto/Asterix.h"
 #include "track/PlotMerge.h"
 
@@ -29,7 +30,6 @@ constexpr qint64 kMinVelocityIntervalMs = 500;
 TrackStore::TrackStore(QObject *parent)
     : QObject(parent)
 {
-    m_clock.start();
     // Một giây một lần là đủ mịn cho ngưỡng xoá tính bằng chục giây.
     m_expireTimer = new QTimer(this);
     m_expireTimer->setInterval(1000);
@@ -94,7 +94,7 @@ void TrackStore::applyVq(const Asterix::Cat048 &r)
         hasPos = true;
     }
 
-    const qint64 now = m_clock.elapsed();
+    const qint64 now = DataClock::nowMs();
     int i = indexOf(id);
     const bool added = (i < 0);
     if (added) {
@@ -166,14 +166,14 @@ bool TrackStore::mergePlot(const quint32 *plot, double halfAzDeg, double halfRan
 void TrackStore::applyMhPlot(const quint32 *plot)
 {
     MhTracker::Events ev;
-    if (m_mh.plot(m_tracks, plot, m_clock.elapsed(), &ev))
+    if (m_mh.plot(m_tracks, plot, DataClock::nowMs(), &ev))
         emitMhEvents(ev);
 }
 
 void TrackStore::mhSweep(double azDeg)
 {
     MhTracker::Events ev;
-    m_mh.sweep(m_tracks, azDeg, m_clock.elapsed(), &ev);
+    m_mh.sweep(m_tracks, azDeg, DataClock::nowMs(), &ev);
     if (!ev.added.isEmpty() || !ev.updated.isEmpty() || !ev.expired.isEmpty())
         emitMhEvents(ev);
 }
@@ -225,7 +225,9 @@ void TrackStore::removeAll(RemoveReason reason)
     // Lấy ra hết trước rồi mới báo: lớp nhận tín hiệu có thể đọc lại danh sách.
     QVector<TrackEntry> gone;
     gone.swap(m_tracks);
-    if (reason == RemovedDisconnected)
+    // Dữ liệu sau đó không nối tiếp dữ liệu trước (kết nối lại, tua): bộ bám MH
+    // đo lại chu kỳ quét từ đầu.
+    if (reason == RemovedDisconnected || reason == RemovedReplay)
         m_mh.reset();
     else
         m_mh.clearPending();
@@ -263,7 +265,7 @@ bool TrackStore::clearIdentity(quint32 id)
 
 void TrackStore::expire()
 {
-    const qint64 now = m_clock.elapsed();
+    const qint64 now = DataClock::nowMs();
     QVector<quint32> stale;
     for (const TrackEntry &t : std::as_const(m_tracks)) {
         if (now - t.updatedMs > m_dropMs)

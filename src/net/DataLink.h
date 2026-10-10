@@ -62,6 +62,11 @@ public:
     // khi đang ghi lưu, mang số dòng của file ghi lưu. Gọi trước moveToThread.
     void setRecordSink(std::shared_ptr<RecordSink> sink, int stream);
 
+    // Phát lại: một gói đã ghi lưu đi đúng đường giải mã như lúc nhận từ cổng
+    // (worker không mở socket, gọi thẳng trên luồng phát lại). Dòng lệnh của PC
+    // trên X18-SCN chỉ được đếm, không có ai để trả lời.
+    void inject(const QByteArray &raw);
+
 public slots:
     void begin();
     void finish();
@@ -146,7 +151,9 @@ public:
 
     bool isRunning() const { return !m_threads.isEmpty(); }
 
-    void start();
+    // only rỗng: mở mọi dòng. Có danh sách thì chỉ mở các dòng mang tên đó
+    // (phát lại chỉ mở dòng gửi X18-SCN-S / SCH-VQ được chọn).
+    void start(const QStringList &only = QStringList());
     void stop();
 
     // Gửi một gói tin qua dòng cấu hình mang tên phân loại này. Trả về false

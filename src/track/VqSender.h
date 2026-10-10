@@ -2,7 +2,6 @@
 
 #include "proto/Asterix.h"
 
-#include <QElapsedTimer>
 #include <QObject>
 
 struct TrackEntry;
@@ -52,7 +51,6 @@ signals:
 
 private:
     Config m_cfg;
-    QElapsedTimer m_clock;
     int m_lastSector = -1;
     bool m_hasNorth = false;
     qint64 m_northMs = 0;

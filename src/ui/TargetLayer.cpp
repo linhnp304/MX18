@@ -1,5 +1,6 @@
 #include "ui/TargetLayer.h"
 
+#include "core/DataClock.h"
 #include "core/GeoCalc.h"
 #include "core/Settings.h"
 #include "track/TrackStore.h"
@@ -208,7 +209,7 @@ void TargetLayer::addPlot(const quint32 *fields)
     std::memcpy(m.f, fields, sizeof(m.f));
     m.plane = LocalProjection::planeFromPolar((fields[Plot::Azm] % 36000u) / 100.0,
                                               fields[Plot::Range] / 1000.0);
-    m.ms = m_clock.elapsed();
+    m.ms = DataClock::nowMs();
     m_plots.append(m);
 }
 
@@ -219,7 +220,7 @@ void TargetLayer::clearPlots()
 
 void TargetLayer::addAlarm(double headDeg)
 {
-    const qint64 now = m_clock.elapsed();
+    const qint64 now = DataClock::nowMs();
     for (AlarmRay &a : m_alarms) {
         double d = std::fmod(std::abs(a.headDeg - headDeg), 360.0);
         if (d > 180.0)
@@ -240,7 +241,7 @@ void TargetLayer::clearAlarms()
 bool TargetLayer::prune()
 {
     const qint64 holdMs = qint64(Settings::instance().setups().plotHoldSec) * 1000;
-    const qint64 now = m_clock.elapsed();
+    const qint64 now = DataClock::nowMs();
     // Điểm dấu đến theo thứ tự thời gian nên chỉ cần cắt ở đầu danh sách.
     int old = 0;
     while (old < m_plots.size() && now - m_plots.at(old).ms > holdMs)

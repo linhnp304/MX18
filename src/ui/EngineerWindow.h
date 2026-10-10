@@ -45,6 +45,14 @@ public:
     void clearBack();
     // Bật/tắt ô "Khóa điều khiển" từ bên ngoài (sau lệnh khởi động lại MH).
     void setLocked(bool locked);
+    bool isLocked() const;
+
+    // Phát lại (step-07): ô "Khóa điều khiển" chọn sẵn và không bỏ được, các ô
+    // nhập bám gói phản hồi phát lại. Dừng phát lại thì trả lại giá trị đã chụp
+    // (mỗi gói lệnh một mảng trường) và bỏ mọi dấu phản hồi.
+    QVector<QVector<quint32>> snapshot() const;
+    void restore(const QVector<QVector<quint32>> &fields);
+    void setReplaying(bool replaying);
 
 signals:
     void configSaved(const QString &message);

@@ -3,6 +3,7 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 #include <array>
@@ -148,5 +149,28 @@ bool walkBlocks(QIODevice *file, QVector<BlockRef> *blocks, qint64 *validBytes,
 
 // Khối mô tả: JSON trong bản ghi kMetaStream của khối đầu tiên.
 QByteArray readMeta(QIODevice *file, QString *error = nullptr);
+
+// ms từ đầu file của gói cuối cùng trong khối (0 khi không đọc được).
+quint32 lastPacketMs(QIODevice *file, const BlockRef &block);
+
+// Số liệu một file cho danh sách phát lại (nhóm "Phát lại" của tab "Ghi lưu").
+struct Summary {
+    QString path;              // đường dẫn đầy đủ
+    QString relName;           // yyyy/MM/yyyyMMdd_HHmmss.rec trong ./records
+    QString title;             // yyyy/MM/dd HH:mm:ss lấy theo tên file
+    QDateTime start;
+    QDateTime end;
+    qint64 durationMs = 0;
+    quint64 bytes = 0;
+    quint64 packets = 0;
+    bool closed = false;
+};
+
+// Đọc header; file chưa "đóng đàng hoàng" (mất điện, phần mềm bị giết) thì đi
+// dọc đầu khối để lấy số gói và giờ kết thúc thật thay vì số liệu cũ của header.
+bool summarize(const QString &path, Summary *out, QString *error = nullptr);
+// Mọi file .rec trong root/yyyy/MM, mới nhất trước. File không đọc được thì bỏ
+// qua và ghi một dòng vào *errors.
+QVector<Summary> scanRecords(const QString &root, QStringList *errors = nullptr);
 
 } // namespace RecordFormat

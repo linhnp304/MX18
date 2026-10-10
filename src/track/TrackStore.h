@@ -4,7 +4,6 @@
 #include "track/MhTracker.h"
 #include "track/TrackEntry.h"
 
-#include <QElapsedTimer>
 #include <QObject>
 #include <QVector>
 
@@ -29,6 +28,8 @@ public:
         RemovedDisconnected,   // dừng kết nối: xoá sạch, không báo đi đâu
         RemovedListCleared,    // nút "Xóa danh sách quỹ đạo": như người dùng xoá từng quỹ đạo
         RemovedTrackerOff,     // bỏ chọn "Khởi tạo quỹ đạo từ điểm dấu MH": xoá quỹ đạo track_type 3
+        RemovedReplay,         // tua / dừng phát lại: xoá sạch như dừng kết nối nhưng vẫn gửi
+                               // bản tin cuối nếu đang gửi thông tin phát lại đến SCH-VQ
     };
 
     explicit TrackStore(QObject *parent = nullptr);
@@ -80,7 +81,6 @@ private:
 
     QVector<TrackEntry> m_tracks;
     LocalProjection m_proj;
-    QElapsedTimer m_clock;
     QTimer *m_expireTimer = nullptr;
     qint64 m_dropMs = 40000;
     MhTracker m_mh;

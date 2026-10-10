@@ -24,6 +24,8 @@ set(MX18_SOURCES
 
     src/core/AppPaths.cpp
     src/core/AppPaths.h
+    src/core/DataClock.cpp
+    src/core/DataClock.h
     src/core/GeoCalc.cpp
     src/core/GeoCalc.h
     src/core/JsonFile.cpp
@@ -80,6 +82,8 @@ set(MX18_SOURCES
     src/record/RecordFormat.h
     src/record/Recorder.cpp
     src/record/Recorder.h
+    src/record/Replayer.cpp
+    src/record/Replayer.h
 
     src/ui/Theme.cpp
     src/ui/Theme.h

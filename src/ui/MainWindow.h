@@ -5,6 +5,7 @@
 #include "proto/Asterix.h"
 #include "proto/ScnCf.h"
 #include "proto/ScnText.h"
+#include "ui/ControlTab.h"
 #include "ui/StatusPanel.h"
 
 #include <QMainWindow>
@@ -26,6 +27,7 @@ class PlotListWindow;
 class RadarCenterPopup;
 class RawIqStore;
 class Recorder;
+class Replayer;
 class TrackStore;
 class VqSender;
 class ViewIqWindow;
@@ -83,7 +85,18 @@ private:
 
     void toggleControlPanel();
     void setConnected(bool connected);
+    // Xoá phần đang vẽ của dữ liệu (video, quỹ đạo, điểm dấu, trạng thái MH,
+    // phản hồi của cửa sổ kỹ sư) khi dừng kết nối / bắt đầu, dừng phát lại.
+    void clearDataView();
+    // Các câu "đầu tiên" và bộ đếm của luồng SCN báo lại từ đầu.
+    void resetSession();
     void setRecording(bool recording);
+    void refreshRecordList();
+    void setReplaying(bool replaying);
+    void stopReplay();
+    void onReplaySeeked();
+    // Mở lại LinkManager chỉ với các dòng gửi được chọn ở nhóm "Phát lại".
+    void startReplayLinks();
     void requestExit();
 
     MapData m_mapData;
@@ -118,6 +131,15 @@ private:
     std::shared_ptr<RawIqStore> m_rawIq;
     // Ghi lưu sống suốt phiên chạy: bắt đầu / dừng được cả lúc đang kết nối.
     Recorder *m_recorder = nullptr;
+    // Phát lại đi chung các slot nhận dữ liệu với LinkManager (onFrame…).
+    Replayer *m_replayer = nullptr;
+    bool m_replaying = false;
+    // Giá trị điều khiển trước khi phát lại, trả lại khi dừng (step-07).
+    ControlTab::Snapshot m_ctrlSnapshot{};
+    QVector<QVector<quint32>> m_engineerSnapshot;
+    bool m_gpsSaved = false;
+    double m_gpsLatSaved = 0.0;
+    double m_gpsLonSaved = 0.0;
 
     // Danh sách quỹ đạo (X18-VQ) và bộ dựng gói gửi VQ (SCH-VQ).
     TrackStore *m_tracks = nullptr;
