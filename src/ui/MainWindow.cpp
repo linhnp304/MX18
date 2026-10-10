@@ -7,6 +7,7 @@
 #include "net/RawIqStore.h"
 #include "proto/Dataframe.h"
 #include "proto/Packets.h"
+#include "record/Recorder.h"
 #include "track/TrackStore.h"
 #include "track/VqSender.h"
 #include "ui/AmplitudeView.h"
@@ -17,6 +18,7 @@
 #include "ui/MhStatusPopup.h"
 #include "ui/PlotListWindow.h"
 #include "ui/Popups.h"
+#include "ui/RecordTab.h"
 #include "ui/SettingsTab.h"
 #include "ui/SetupDialogs.h"
 #include "ui/Theme.h"
@@ -34,6 +36,7 @@
 #include <QVBoxLayout>
 #include <QVariantAnimation>
 
+#include <cmath>
 #include <cstring>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -59,6 +62,10 @@ MainWindow::~MainWindow()
         m_ping->stop();
     if (m_links)
         m_links->stop();
+    // Sau khi các luồng nhận đã dừng: không còn gói nào đẩy vào, bộ đệm ghi
+    // nốt được trọn vẹn.
+    if (m_recorder)
+        m_recorder->stop();
 }
 
 void MainWindow::reportConfigErrors()
@@ -134,6 +141,10 @@ void MainWindow::buildUi()
     // luồng nhận thay vì mở khung rồi đẩy về luồng giao diện.
     m_rawIq = std::make_shared<RawIqStore>();
     m_links->setRawSink(QStringLiteral("Data-RAW"), m_rawIq);
+    m_recorder = new Recorder(this);
+    m_recorder->setStreams(m_linkConfig);
+    m_links->setRecordSink(m_recorder->sink());
+    m_controlPanel->recordTab()->setRecorder(m_recorder);
 
     const Setups &setups = Settings::instance().setups();
     m_tracks = new TrackStore(this);
@@ -183,6 +194,18 @@ void MainWindow::wireSignals()
     });
     connect(tab, &SettingsTab::connectToggled, this, &MainWindow::setConnected);
     connect(tab, &SettingsTab::exitRequested, this, &MainWindow::requestExit);
+
+    connect(m_controlPanel->recordTab(), &RecordTab::recordToggled, this, &MainWindow::setRecording);
+    connect(m_recorder, &Recorder::message, this,
+            [this](const QString &text, bool isError) { notify(text, isError); });
+    connect(m_recorder, &Recorder::fileOpened, this, [this](const QString &name) {
+        notify(QStringLiteral("Ghi lưu: đang ghi file ./records/%1.").arg(name));
+    });
+    connect(m_recorder, &Recorder::failed, this, [this](const QString &text) {
+        notify(text, true);
+        m_controlPanel->recordTab()->setRecording(false);
+        m_controlPanel->settingsTab()->setRecordBusy(false);
+    });
 
     connect(m_colorDialog, &ColorSetupDialog::applied, this, [this] {
         m_mapView->refreshSettings();
@@ -266,21 +289,8 @@ void MainWindow::wireSignals()
         m_statusPanel->setSweepAngles(m_hasAngles, m_azRd, m_azMh);
     });
 
-    connect(m_radarPopup, &RadarCenterPopup::applyRequested, this, [this](double lat, double lon) {
-        Setups &s = Settings::instance().setups();
-        s.radarLat = lat;
-        s.radarLon = lon;
-        Settings::instance().saveSetups();
-        m_mapView->setRadarCenter(lat, lon);
-        m_tracks->setCenter(lat, lon);
-        applyVqConfig();
-        notify(QStringLiteral("Tâm đài chuyển về %1 - %2.")
-                   .arg(QString::number(lat, 'f', 6), QString::number(lon, 'f', 6)));
-    });
-    connect(m_radarPopup, &RadarCenterPopup::gpsRequested, this, [this] {
-        notify(QStringLiteral("Chưa nhận được dữ liệu GPS (chức năng hoàn thiện ở giai đoạn sau)."),
-               true);
-    });
+    connect(m_radarPopup, &RadarCenterPopup::applyRequested, this, &MainWindow::applyRadarCenter);
+    connect(m_radarPopup, &RadarCenterPopup::gpsRequested, this, &MainWindow::setCenterFromGps);
     connect(m_radarPopup, &RadarCenterPopup::recenterRequested, this, [this] {
         m_mapView->centerOnRadar();
     });
@@ -451,30 +461,44 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
         return;
     }
     case Proto::CatVideoI: {
-        if (data.size() < Video::kDataBytes)
+        if (data.size() < 4)
             return;
         const quint32 az = Proto::readU32(data.constData(), be) & 0x0fffu;
         m_azMh = az * Video::kAzimuthLsb;
         m_hasAngles = true;
         m_vq->sweep(VqSender::SweepVideoI, az);
         m_tracks->mhSweep(m_azMh);
-        const QByteArray video = data.mid(4, Video::kSamples);
+        // Gói cụt (step-07): phần biên độ thiếu coi như 0.
+        QByteArray video = data.mid(4, Video::kSamples);
+        if (video.size() < Video::kSamples)
+            video.append(QByteArray(Video::kSamples - video.size(), '\0'));
         m_mapView->setMhSweep(m_azMh, video);
         m_controlPanel->amplitudeView()->setTrace(video);
         return;
     }
     case Proto::CatStatusMh: {
+        // 128 byte = 5 trường đầu + 27 trường, không có checksum (anh Linh soát
+        // lại tài liệu và file 20261008_02).
         quint32 fields[StatusMh::Count] = {0};
-        if (!Proto::unpackFields(data, fields, StatusMh::Count, be))
+        const int n = Proto::unpackAvailable(data, fields, StatusMh::Count, be);
+        if (n == 0)
             return;
+        // Lat = lng = 0 là GPS chưa có toạ độ chứ không phải đài nằm ở 0°, 0°.
+        if (n > StatusMh::GpsLng && (fields[StatusMh::GpsLat] != 0 || fields[StatusMh::GpsLng] != 0)) {
+            m_hasGps = true;
+            m_gpsLat = qint32(fields[StatusMh::GpsLat]) / 10000.0;
+            m_gpsLon = qint32(fields[StatusMh::GpsLng]) / 10000.0;
+        }
         m_mhPopup->setStatus(fields, serial);
         m_statusPanel->setPopupState(StatusPanel::MhStatus,
                                      m_mhPopup->hasError() ? StatusPanel::Error : StatusPanel::Ok);
         return;
     }
     case Proto::CatCmdUserBack: {
-        quint32 fields[CmdUser::Count] = {0};
-        if (!Proto::unpackFields(data, fields, CmdUser::Count, be))
+        // Gói cụt: trường thiếu lấy đúng giá trị đang đặt để không báo đỏ oan.
+        quint32 fields[CmdUser::Count];
+        std::memcpy(fields, m_controlPanel->controlTab()->cmdUserFields(), sizeof(fields));
+        if (Proto::unpackAvailable(data, fields, CmdUser::Count, be) == 0)
             return;
         // Chỉ khi MH báo đang nối phát mới coi công suất thấp là lỗi.
         m_mhPopup->setTransmitOn(fields[CmdUser::Noiphat] == 1);
@@ -486,7 +510,7 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
         return;
     case Proto::CatAlarmHead: {
         quint32 head = 0;
-        if (!Proto::unpackFields(data, &head, AlarmHead::Count, be))
+        if (Proto::unpackAvailable(data, &head, AlarmHead::Count, be) == 0)
             return;
         const double deg = (head % 36000u) / 100.0;
         if (!m_alarmNoted) {
@@ -497,12 +521,19 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
         return;
     }
     case Proto::CatCmdAtBack: {
-        quint32 fields[CmdAt::Count] = {0};
-        if (!Proto::unpackFields(data, fields, CmdAt::Count, be))
+        quint32 fields[CmdAt::Count];
+        std::memcpy(fields, m_controlPanel->controlTab()->cmdAtFields(), sizeof(fields));
+        if (Proto::unpackAvailable(data, fields, CmdAt::Count, be) == 0)
             return;
         m_controlPanel->controlTab()->applyCmdAtFeedback(fields);
         return;
     }
+    case Proto::CatSectorI:
+    case Proto::CatGpsData:
+    case Proto::CatMhFwVersion:
+        // Anh Linh chốt (step-07): nhận về nhưng chưa dùng, giao thức có sẵn
+        // trong Packets.h (SectorI / GpsData / MhFwVersion).
+        return;
     default:
         break;
     }
@@ -518,12 +549,13 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
     case Proto::CatCmdAdminBuphabdBack:
     case Proto::CatStatusCalib:
     case Proto::CatStatusParams: {
+        // Số trường thật (có thể kèm từ checksum ở cuối); gói cụt thì cửa sổ
+        // kỹ sư tự lấp phần thiếu.
         const int count = int(data.size() / 4);
         if (count <= 0)
             return;
         QVector<quint32> fields(count, 0);
-        if (!Proto::unpackFields(data, fields.data(), count, be))
-            return;
+        Proto::unpackAvailable(data, fields.data(), count, be);
         m_engineerWindow->applyFrame(category, serial, fields.constData(), count);
         return;
     }
@@ -534,12 +566,11 @@ void MainWindow::onFrame(quint32 category, quint32 serial, const QByteArray &dat
 
 void MainWindow::onPlot(const QByteArray &data, bool be)
 {
-    // Hệ thống MH có thể bỏ bớt các trường thông tin chùm / dự phòng ở cuối:
-    // thiếu thì giữ mặc định, chỉ cần đủ đến fuellevel.
+    // Gói cụt (hệ thống MH bỏ bớt trường dự phòng / thông tin chùm): trường
+    // thiếu giữ mặc định, chỉ cần có phương vị và cự ly.
     quint32 f[Plot::Count];
     std::memcpy(f, Plot::defaults(), sizeof(f));
-    const int n = qMin(int(Plot::Count), int(data.size() / 4));
-    if (n < Plot::kMinCount || !Proto::unpackFields(data, f, n, be))
+    if (Proto::unpackAvailable(data, f, Plot::Count, be) < Plot::kMinCount)
         return;
     if (!m_plotNoted) {
         m_plotNoted = true;
@@ -588,6 +619,41 @@ void MainWindow::onAsterix(const Asterix::Batch &batch)
     // VIDEO_R / VIDEO_I (analysis-results/04 mục 3).
     for (const Asterix::Cat048 &r : batch.reports)
         m_tracks->applyVq(r);
+}
+
+void MainWindow::applyRadarCenter(double lat, double lon)
+{
+    Setups &s = Settings::instance().setups();
+    s.radarLat = lat;
+    s.radarLon = lon;
+    Settings::instance().saveSetups();
+    m_radarPopup->setCenter(lat, lon);
+    // Bản đồ chiếu lại quanh tâm mới; vòng cự ly và đường chia độ vẽ theo tâm
+    // đài nên tự đi theo.
+    m_mapView->setRadarCenter(lat, lon);
+    m_tracks->setCenter(lat, lon);
+    applyVqConfig();
+    notify(QStringLiteral("Tâm đài chuyển về %1 - %2.")
+               .arg(QString::number(lat, 'f', 6), QString::number(lon, 'f', 6)));
+}
+
+void MainWindow::setCenterFromGps()
+{
+    if (!m_hasGps) {
+        notify(QStringLiteral("Chưa có thông tin GPS (chưa nhận được gói trạng thái MH nào có toạ độ GPS)."));
+        return;
+    }
+    // GpsLat/GpsLng chỉ có 4 chữ số thập phân (~11 m): so trong nửa đơn vị đó.
+    const Setups &s = Settings::instance().setups();
+    const bool moved = std::fabs(s.radarLat - m_gpsLat) > 0.5e-4 || std::fabs(s.radarLon - m_gpsLon) > 0.5e-4;
+    if (moved) {
+        applyRadarCenter(m_gpsLat, m_gpsLon);
+    } else {
+        m_radarPopup->setCenter(s.radarLat, s.radarLon);
+        notify(QStringLiteral("Tâm đài đã trùng toạ độ GPS (%1 - %2).")
+                   .arg(QString::number(m_gpsLat, 'f', 4), QString::number(m_gpsLon, 'f', 4)));
+    }
+    m_mapView->centerOnRadar();
 }
 
 void MainWindow::applyVqConfig()
@@ -792,10 +858,54 @@ void MainWindow::showScnStatus()
     m_scnPopup->setNote(lines.join(QLatin1Char('\n')), true);
 }
 
+void MainWindow::setRecording(bool recording)
+{
+    RecordTab *tab = m_controlPanel->recordTab();
+    if (!recording) {
+        const RecordStats st = m_recorder->stats();
+        const QString error = m_recorder->stop();
+        if (!error.isEmpty())
+            notify(error, true);
+        else
+            notify(QStringLiteral("Đã dừng ghi lưu: ./records/%1 (%2 gói tin, %3 MB).")
+                       .arg(st.fileName)
+                       .arg(st.packets)
+                       .arg(double(st.bytes) / (1024.0 * 1024.0), 0, 'f', 1));
+        tab->setRecording(false);
+        m_controlPanel->settingsTab()->setRecordBusy(false);
+        return;
+    }
+
+    // records.json đọc lại mỗi lần bắt đầu: kỹ sư sửa file xong không phải chạy lại.
+    Settings::instance().loadRecords();
+    for (const QString &e : Settings::instance().takeLoadErrors())
+        notify(e, true);
+    const RecordSetup &rs = Settings::instance().records();
+    QString error;
+    if (!m_recorder->start(rs, &error)) {
+        notify(error, true);
+        return;
+    }
+    tab->setRecording(true);
+    m_controlPanel->settingsTab()->setRecordBusy(true);
+    notify(QStringLiteral("Bắt đầu ghi lưu: VIDEO_R %1, VIDEO_I %2, Data-RAW %3; ngắt file ở %4 GB hoặc %5 giờ.%6")
+               .arg(rs.fullVideoR ? QStringLiteral("đầy đủ") : QStringLiteral("rút gọn"),
+                    rs.fullVideoI ? QStringLiteral("đầy đủ") : QStringLiteral("rút gọn"),
+                    rs.rawIq ? QStringLiteral("có ghi") : QStringLiteral("không ghi"))
+               .arg(rs.maxSizeGb)
+               .arg(rs.maxTimeH)
+               .arg(m_connected ? QString()
+                                : QStringLiteral(" Chưa kết nối hệ thống: file chỉ có gói tin sau khi kết nối.")));
+}
+
 void MainWindow::requestExit()
 {
     if (m_connected) {
         notify(QStringLiteral("Phải dừng kết nối trước khi thoát phần mềm."), true);
+        return;
+    }
+    if (m_recorder->isRecording()) {
+        notify(QStringLiteral("Phải dừng ghi lưu trước khi thoát phần mềm."), true);
         return;
     }
     close();
@@ -829,6 +939,12 @@ void MainWindow::closeEvent(QCloseEvent *event)
     if (m_connected) {
         QMessageBox::warning(this, QStringLiteral("Đang kết nối"),
                              QStringLiteral("Phải dừng kết nối trước khi thoát phần mềm."));
+        event->ignore();
+        return;
+    }
+    if (m_recorder->isRecording()) {
+        QMessageBox::warning(this, QStringLiteral("Đang ghi lưu"),
+                             QStringLiteral("Phải dừng ghi lưu trước khi thoát phần mềm."));
         event->ignore();
         return;
     }

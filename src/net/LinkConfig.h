@@ -32,17 +32,18 @@ struct LinkEntry {
     QString remoteIp = QStringLiteral("0.0.0.0");
     quint16 remotePort = 0;
     int format = Dataframe;
-    // ASTERIX luôn big-endian, "Cf" của SCN luôn little-endian; dòng của hệ
-    // thống MH mặc định big-endian (anh Linh chốt ở giai đoạn 2). Với scn_text
-    // khoá này không có tác dụng.
-    bool bigEndian = true;
+    // ASTERIX luôn big-endian, "Cf" của SCN luôn little-endian. Dòng của hệ
+    // thống MH mặc định little-endian: giai đoạn 2 đoán big-endian, nhưng bắt
+    // gói hệ thống thật (2026-10-08) thì mọi gói đều little-endian, anh Linh
+    // chốt đổi. Với scn_text khoá này không có tác dụng.
+    bool bigEndian = false;
 
     static QString formatName(int format);
     // -1 khi tên lạ.
     static int formatFromName(const QString &name);
     // Định dạng mặc định của một phân loại; phân loại lạ thì là Dataframe.
     static int defaultFormat(const QString &category);
-    static bool defaultBigEndian(int format) { return format != ScnCf; }
+    static bool defaultBigEndian(int format) { return format == Asterix; }
 };
 
 struct LinkConfig {
@@ -58,7 +59,8 @@ struct LinkConfig {
     bool save() const;
 
     const LinkEntry *find(const QString &category) const;
-    // Thứ tự byte của dòng mang tên phân loại này; không có dòng thì big-endian.
+    // Thứ tự byte của dòng mang tên phân loại này; không có dòng thì little-endian
+    // như hệ thống MH.
     bool bigEndianFor(const QString &category) const;
 
     // Danh sách tên phân loại để đổ vào ComboBox cột "Phân loại".

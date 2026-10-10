@@ -2,29 +2,13 @@
 
 #include "ui/AmplitudeView.h"
 #include "ui/ControlTab.h"
+#include "ui/RecordTab.h"
 #include "ui/SettingsTab.h"
 #include "ui/TrackListTab.h"
 
-#include <QLabel>
 #include <QSplitter>
 #include <QTabWidget>
 #include <QVBoxLayout>
-
-namespace {
-
-QWidget *placeholderTab(const QString &text, QWidget *parent)
-{
-    auto *w = new QWidget(parent);
-    auto *lay = new QVBoxLayout(w);
-    auto *lbl = new QLabel(text, w);
-    lbl->setAlignment(Qt::AlignCenter);
-    lbl->setWordWrap(true);
-    lbl->setStyleSheet(QStringLiteral("color:#5d666f;font-style:italic;"));
-    lay->addWidget(lbl);
-    return w;
-}
-
-} // namespace
 
 ControlPanel::ControlPanel(QWidget *parent)
     : QWidget(parent)
@@ -41,12 +25,12 @@ ControlPanel::ControlPanel(QWidget *parent)
 
     m_trackListTab = new TrackListTab(m_tabs);
     m_controlTab = new ControlTab(m_tabs);
+    m_recordTab = new RecordTab(m_tabs);
     m_settingsTab = new SettingsTab(m_tabs);
 
     m_tabs->addTab(m_trackListTab, QStringLiteral("Danh sách"));
     m_tabs->addTab(m_controlTab, QStringLiteral("Điều khiển"));
-    m_tabs->addTab(placeholderTab(QStringLiteral("Ghi lưu và tái hiện dữ liệu\n(giai đoạn sau)"), m_tabs),
-                   QStringLiteral("Ghi lưu"));
+    m_tabs->addTab(m_recordTab, QStringLiteral("Ghi lưu"));
     m_tabs->addTab(m_settingsTab, QStringLiteral("Cài đặt"));
     m_tabs->setCurrentWidget(m_settingsTab);
 

@@ -25,6 +25,7 @@ class PingService;
 class PlotListWindow;
 class RadarCenterPopup;
 class RawIqStore;
+class Recorder;
 class TrackStore;
 class VqSender;
 class ViewIqWindow;
@@ -63,6 +64,9 @@ private:
     void onAsterix(const Asterix::Batch &batch);
     void onPlot(const QByteArray &data, bool be);
     void applyVqConfig();
+    // Đổi tâm đài: ghi setups.json, chiếu lại bản đồ, quỹ đạo, cấu hình SCH-VQ.
+    void applyRadarCenter(double lat, double lon);
+    void setCenterFromGps();
     void showScnStatus();
     void sendCmdAt();
     void sendCmdUser();
@@ -79,6 +83,7 @@ private:
 
     void toggleControlPanel();
     void setConnected(bool connected);
+    void setRecording(bool recording);
     void requestExit();
 
     MapData m_mapData;
@@ -111,6 +116,8 @@ private:
     // Dùng chung giữa luồng nhận "Data-RAW" và cửa sổ ViewIQ; shared_ptr để
     // luồng nhận không bao giờ giữ con trỏ treo dù thứ tự huỷ thế nào.
     std::shared_ptr<RawIqStore> m_rawIq;
+    // Ghi lưu sống suốt phiên chạy: bắt đầu / dừng được cả lúc đang kết nối.
+    Recorder *m_recorder = nullptr;
 
     // Danh sách quỹ đạo (X18-VQ) và bộ dựng gói gửi VQ (SCH-VQ).
     TrackStore *m_tracks = nullptr;
@@ -124,6 +131,12 @@ private:
     // chọn thì phải xoá các quỹ đạo track_type 3.
     bool m_mhTrackInit = false;
     quint32 m_scnPlotsSent = 0;
+
+    // Toạ độ GPS của gói STATUS_MH gần nhất cho nút "Đặt theo GPS". Giữ cả
+    // sau khi dừng kết nối: tâm đài không đổi chỉ vì mất kết nối.
+    bool m_hasGps = false;
+    double m_gpsLat = 0.0;
+    double m_gpsLon = 0.0;
 
     // Góc quét đến 400 lần/giây cho mỗi loại; thanh trạng thái chỉ cần 10 lần.
     QTimer *m_angleTimer = nullptr;

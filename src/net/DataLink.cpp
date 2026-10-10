@@ -2,6 +2,7 @@
 
 #include "net/ScnTextSession.h"
 #include "proto/Dataframe.h"
+#include "record/Recorder.h"
 
 #include <QNetworkDatagram>
 #include <QTcpServer>
@@ -52,6 +53,18 @@ LinkWorker::LinkWorker(const LinkEntry &entry, std::shared_ptr<RawSink> rawSink)
 }
 
 LinkWorker::~LinkWorker() = default;
+
+void LinkWorker::setRecordSink(std::shared_ptr<RecordSink> sink, int stream)
+{
+    m_record = std::move(sink);
+    m_recordStream = stream;
+}
+
+void LinkWorker::record(const char *data, int size)
+{
+    if (m_record && m_record->isActive())
+        m_record->push(m_recordStream, data, size);
+}
 
 void LinkWorker::begin()
 {
@@ -197,6 +210,8 @@ void LinkWorker::acceptScn()
     m_server->pauseAccepting();
     m_scn = new ScnTextSession(s, this);
     connect(m_scn, &ScnTextSession::statusChanged, this, &LinkWorker::scnStatus);
+    connect(m_scn, &ScnTextSession::lineReceived, this,
+            [this](const QByteArray &line) { record(line.constData(), int(line.size())); });
     connect(m_scn, &ScnTextSession::unknownCommand, this, [this](const QString &line) {
         emit message(QStringLiteral("%1: PC gửi lệnh lạ, không trả lời: %2")
                          .arg(m_entry.category, line), false);
@@ -211,8 +226,15 @@ void LinkWorker::endScnSession()
 {
     if (!m_scn)
         return;
-    emit message(QStringLiteral("%1: PC %2 đã ngắt kết nối, chờ kết nối lại.")
-                     .arg(m_entry.category, m_scn->status().peer), false);
+    if (m_scn->timedOut()) {
+        emit message(QStringLiteral("%1: PC %2 im lặng quá %3 giây (không có keepalive), bỏ phiên và chờ "
+                                    "kết nối lại.")
+                         .arg(m_entry.category, m_scn->status().peer)
+                         .arg(ScnTextSession::kIdleTimeoutMs / 1000), true);
+    } else {
+        emit message(QStringLiteral("%1: PC %2 đã ngắt kết nối, chờ kết nối lại.")
+                         .arg(m_entry.category, m_scn->status().peer), false);
+    }
     m_scn->deleteLater();
     m_scn = nullptr;
 
@@ -292,7 +314,9 @@ void LinkWorker::readUdp()
         const QNetworkDatagram dg = m_udp->receiveDatagram();
         if (!senderAllowed(dg.senderAddress(), quint16(dg.senderPort())))
             continue;
-        handleDatagram(dg.data());
+        const QByteArray raw = dg.data();
+        record(raw.constData(), int(raw.size()));
+        handleDatagram(raw);
     }
 }
 
@@ -347,6 +371,7 @@ bool LinkWorker::readRawDatagram()
         return false;
     if (senderAllowed(addr, port)) {
         checkRawSize(n);
+        record(m_rawBuffer.constData(), int(n));
         m_rawSink->feed(m_rawBuffer.constData(), int(n), m_bigEndian);
     }
     return true;
@@ -381,6 +406,7 @@ void LinkWorker::readTcp()
         const int n = m_rawSink->frameBytes();
         int offset = 0;
         while (buf.size() - offset >= n) {
+            record(buf.constData() + offset, n);
             m_rawSink->feed(buf.constData() + offset, n, m_bigEndian);
             offset += n;
         }
@@ -397,6 +423,7 @@ void LinkWorker::readTcp()
         }
         if (len == 0 || buf.size() < len)
             break;
+        record(buf.constData(), len);
         handleRaw(buf.left(len));
         buf.remove(0, len);
     }
@@ -404,6 +431,19 @@ void LinkWorker::readTcp()
 
 void LinkWorker::handleRaw(const QByteArray &raw)
 {
+    // Header 2d2d2d2d đọc chiều nào cũng khớp, còn máy XL MH để length = 0 nên
+    // gói ngược thứ tự byte vẫn mở được với category vô nghĩa rồi bị bỏ âm thầm
+    // (lần thử thật 2026-10-08 mất cả buổi vì thế). Mọi category đều nhỏ hơn
+    // 0x1000000: category đọc ra lớn mà đảo byte lại thì nhỏ là cấu hình ngược.
+    if (raw.size() >= 8 && Proto::readU32(raw.constData(), m_bigEndian) == Proto::kHeader
+        && Proto::readU32(raw.constData() + 4, m_bigEndian) > 0xffffffu
+        && Proto::readU32(raw.constData() + 4, !m_bigEndian) <= 0xffffffu) {
+        warnDecodeOnce(QStringLiteral("gói đến là %1 nhưng dòng đặt \"big_endian\": %2 — sửa khoá này trong "
+                                      "settings/connect.json rồi chạy lại")
+                           .arg(m_bigEndian ? QStringLiteral("little-endian") : QStringLiteral("big-endian"),
+                                m_bigEndian ? QStringLiteral("true") : QStringLiteral("false")));
+        return;
+    }
     Proto::Frame frame;
     if (!Proto::parse(raw, &frame, m_bigEndian))
         return;
@@ -469,11 +509,14 @@ void LinkManager::start()
     if (isRunning())
         return;
 
-    for (const LinkEntry &entry : std::as_const(m_config.entries)) {
+    for (int i = 0; i < m_config.entries.size(); ++i) {
+        const LinkEntry &entry = m_config.entries.at(i);
         auto *thread = new QThread(this);
         thread->setObjectName(QStringLiteral("link-%1").arg(entry.category));
 
         auto *worker = new LinkWorker(entry, m_rawSinks.value(entry.category));
+        if (m_recordSink)
+            worker->setRecordSink(m_recordSink, i);
         worker->moveToThread(thread);
 
         connect(thread, &QThread::started, worker, &LinkWorker::begin);

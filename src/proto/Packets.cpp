@@ -345,3 +345,32 @@ quint32 rawLatLng(double deg)
 }
 
 } // namespace Track
+
+namespace GpsData {
+
+Info decode(const quint32 *f)
+{
+    Info g;
+    g.headingDeg = (f[Heading] % 36000u) / 100.0;
+    g.lat = qint32(f[Latitude]) / 10000.0;
+    g.lon = qint32(f[Longitude]) / 10000.0;
+    g.altitudeM = qint32(f[Altitude]);
+    g.status = int(f[Status]);
+    return g;
+}
+
+} // namespace GpsData
+
+namespace MhFwVersion {
+
+QString text(const quint32 *f)
+{
+    if (f[Year] < 2000 || f[Year] > 2999 || f[Month] < 1 || f[Month] > 12 || f[Day] < 1 || f[Day] > 31
+        || f[Hour] > 23 || f[Minute] > 59 || f[Second] > 59) {
+        return QString();
+    }
+    return QString::asprintf("%04u-%02u-%02u %02u:%02u:%02u", f[Year], f[Month], f[Day], f[Hour], f[Minute],
+                             f[Second]);
+}
+
+} // namespace MhFwVersion

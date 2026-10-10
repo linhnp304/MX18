@@ -32,18 +32,32 @@ ScnTextSession::ScnTextSession(QTcpSocket *socket, QObject *parent)
     connect(m_startTimer, &QTimer::timeout, this, &ScnTextSession::sendStart);
     m_startTimer->start();
 
+    // Tính cả lúc PC vừa nối mà chưa nói gì: im từ đầu cũng là treo.
+    m_idleTimer = new QTimer(this);
+    m_idleTimer->setSingleShot(true);
+    m_idleTimer->setInterval(kIdleTimeoutMs);
+    connect(m_idleTimer, &QTimer::timeout, this, [this] {
+        m_timedOut = true;
+        m_socket->abort();
+        finish();
+    });
+    m_idleTimer->start();
+
     connect(m_socket, &QTcpSocket::readyRead, this, &ScnTextSession::readLines);
     // Đọc trả 0 byte / đầu bên kia đóng: quay lại chờ kết nối. SW1 không nhận ra
     // lúc này (ReadLine trả null) và có thể quay vòng rỗng mãi.
-    const auto end = [this] {
-        if (m_finished)
-            return;
-        m_finished = true;
-        m_startTimer->stop();
-        emit finished();
-    };
-    connect(m_socket, &QTcpSocket::disconnected, this, end);
-    connect(m_socket, &QTcpSocket::errorOccurred, this, end);
+    connect(m_socket, &QTcpSocket::disconnected, this, &ScnTextSession::finish);
+    connect(m_socket, &QTcpSocket::errorOccurred, this, &ScnTextSession::finish);
+}
+
+void ScnTextSession::finish()
+{
+    if (m_finished)
+        return;
+    m_finished = true;
+    m_startTimer->stop();
+    m_idleTimer->stop();
+    emit finished();
 }
 
 ScnTextSession::~ScnTextSession()
@@ -70,6 +84,7 @@ void ScnTextSession::sendStart()
 
 void ScnTextSession::readLines()
 {
+    m_idleTimer->start();
     m_buffer.append(m_socket->readAll());
 
     // SW1 đọc bằng ReadLine(): \n, \r hay \r\n đều kết thúc một dòng. Dòng rỗng
@@ -94,6 +109,7 @@ void ScnTextSession::handleLine(const QByteArray &raw)
         return;
 
     ++m_status.linesIn;
+    emit lineReceived(line);
     const ScnText::Reply reply = ScnText::answer(line, &m_state);
     if (!reply.text.isEmpty())
         write(reply.text);

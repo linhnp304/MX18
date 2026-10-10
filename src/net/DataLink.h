@@ -18,6 +18,7 @@ class QTcpSocket;
 class QThread;
 class QTimer;
 class QUdpSocket;
+class RecordSink;
 class ScnTextSession;
 
 // Nơi nhận gói thô không theo khung Dataframe (RAW_IQ của dòng "Data-RAW").
@@ -56,6 +57,10 @@ public:
     // rawSink chỉ dùng khi định dạng của dòng là raw_iq.
     explicit LinkWorker(const LinkEntry &entry, std::shared_ptr<RawSink> rawSink = {});
     ~LinkWorker() override;
+
+    // Gói thô nhận được (sau khi lọc người gửi, trước khi mở gói) đẩy vào đây
+    // khi đang ghi lưu, mang số dòng của file ghi lưu. Gọi trước moveToThread.
+    void setRecordSink(std::shared_ptr<RecordSink> sink, int stream);
 
 public slots:
     void begin();
@@ -102,6 +107,7 @@ private:
     bool writeOut(const QByteArray &raw);
     bool senderAllowed(const QHostAddress &addr, quint16 port) const;
     void dropTcpSocket(QTcpSocket *socket);
+    void record(const char *data, int size);
 
     LinkEntry m_entry;
     bool m_bigEndian;
@@ -122,6 +128,9 @@ private:
     std::shared_ptr<RawSink> m_rawSink;
     QByteArray m_rawBuffer;
     bool m_rawSizeWarned = false;
+
+    std::shared_ptr<RecordSink> m_record;
+    int m_recordStream = -1;
 };
 
 // Quản lý toàn bộ các cổng theo connect.json, sống trên luồng giao diện.
@@ -149,6 +158,9 @@ public:
     // Gói nhận trên dòng mang tên phân loại này (định dạng raw_iq) đi thẳng vào
     // sink, không mở khung Dataframe. Có tác dụng từ lần start() kế tiếp.
     void setRawSink(const QString &category, std::shared_ptr<RawSink> sink);
+    // Ghi lưu: mọi worker đẩy gói nhận vào sink này, số dòng = chỉ số trong
+    // config().entries. Có tác dụng từ lần start() kế tiếp.
+    void setRecordSink(std::shared_ptr<RecordSink> sink) { m_recordSink = std::move(sink); }
 
 signals:
     void frameReceived(quint32 category, quint32 serial, const QByteArray &data, bool bigEndian);
@@ -164,4 +176,5 @@ private:
     QVector<LinkWorker *> m_workers;
     QHash<QString, LinkWorker *> m_byCategory;
     QHash<QString, std::shared_ptr<RawSink>> m_rawSinks;
+    std::shared_ptr<RecordSink> m_recordSink;
 };

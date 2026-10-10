@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include <cmath>
 #include <utility> // std::as_const — MSVC không kéo theo qua header Qt
 
 namespace {
@@ -35,6 +36,7 @@ void Settings::load()
     loadNetNodes();
     loadSetupAdmin();
     loadStatusLimits();
+    loadRecords();
 }
 
 QStringList Settings::takeLoadErrors()
@@ -296,7 +298,9 @@ void Settings::saveSetupAdmin()
 void Settings::loadStatusLimits()
 {
     const QString path = AppPaths::settingsFile(QStringLiteral("statuserror.json"));
-    const QJsonObject o = readChecked(path);
+    const int errorsBefore = m_loadErrors.size();
+    QJsonObject o = readChecked(path);
+    const bool readFailed = m_loadErrors.size() > errorsBefore;
     const StatusLimits d;
 
     m_limits.min50V = JsonFile::num(o, QStringLiteral("Min50V"), d.min50V);
@@ -307,15 +311,93 @@ void Settings::loadStatusLimits()
     m_limits.maxT   = JsonFile::i(o, QStringLiteral("MaxT"), d.maxT);
     m_limits.maxH   = JsonFile::i(o, QStringLiteral("MaxH"), d.maxH);
 
-    if (!QFile::exists(path)) {
-        QJsonObject def;
-        def[QStringLiteral("Min50V")] = m_limits.min50V;
-        def[QStringLiteral("Max50V")] = m_limits.max50V;
-        def[QStringLiteral("Min5V")]  = m_limits.min5V;
-        def[QStringLiteral("Max5V")]  = m_limits.max5V;
-        def[QStringLiteral("MinCs")]  = m_limits.minCs;
-        def[QStringLiteral("MaxT")]   = m_limits.maxT;
-        def[QStringLiteral("MaxH")]   = m_limits.maxH;
-        JsonFile::write(path, def);
+    // Mỗi trường một đối tượng {"StDiv": .., "StAdd": ..} mang đúng tên trường
+    // của gói STATUS_MH để kỹ sư đối chiếu với đặc tả khi sửa tay.
+    struct ScaleKey { const char *name; StatusScale StatusLimits::*member; };
+    static const ScaleKey kScales[] = {
+        {"k2_nguon_50v", &StatusLimits::k2Nguon50V},
+        {"k2_nguon_5v",  &StatusLimits::k2Nguon5V},
+        {"k2_nguon_m5v", &StatusLimits::k2NguonM5V},
+        {"k5_tx1_cs",    &StatusLimits::k5Tx1Cs},
+        {"k5_tx1_hssd",  &StatusLimits::k5Tx1Hssd},
+        {"k6_tx2_cs",    &StatusLimits::k6Tx2Cs},
+        {"k6_tx2_hssd",  &StatusLimits::k6Tx2Hssd},
+    };
+    bool missing = !QFile::exists(path);
+    for (const ScaleKey &k : kScales) {
+        const QString key = QString::fromLatin1(k.name);
+        const StatusScale &def = d.*k.member;
+        StatusScale &sc = m_limits.*k.member;
+        const QJsonObject so = o.value(key).toObject();
+        if (!o.value(key).isObject())
+            missing = true;
+        sc.stDiv = JsonFile::num(so, QStringLiteral("StDiv"), def.stDiv);
+        sc.stAdd = JsonFile::num(so, QStringLiteral("StAdd"), def.stAdd);
+        if (!so.contains(QStringLiteral("StDiv")) || !so.contains(QStringLiteral("StAdd")))
+            missing = true;
+        // Chia cho 0 thì mọi giá trị thành vô cực và báo lỗi ầm ĩ: giữ mặc định.
+        if (std::fabs(sc.stDiv) < 1e-9) {
+            m_loadErrors.append(QStringLiteral("statuserror.json: StDiv của %1 bằng 0, dùng mặc định %2.")
+                                    .arg(key).arg(def.stDiv));
+            sc.stDiv = def.stDiv;
+        }
     }
+
+    // File đọc lỗi thì để nguyên cho kỹ sư sửa; thiếu file hoặc thiếu khoá hệ số
+    // (file của giai đoạn trước) thì bổ sung mặc định, giữ nguyên các khoá cũ.
+    if (readFailed || !missing)
+        return;
+    o[QStringLiteral("Min50V")] = m_limits.min50V;
+    o[QStringLiteral("Max50V")] = m_limits.max50V;
+    o[QStringLiteral("Min5V")]  = m_limits.min5V;
+    o[QStringLiteral("Max5V")]  = m_limits.max5V;
+    o[QStringLiteral("MinCs")]  = m_limits.minCs;
+    o[QStringLiteral("MaxT")]   = m_limits.maxT;
+    o[QStringLiteral("MaxH")]   = m_limits.maxH;
+    for (const ScaleKey &k : kScales) {
+        const StatusScale &sc = m_limits.*k.member;
+        QJsonObject so;
+        so[QStringLiteral("StDiv")] = sc.stDiv;
+        so[QStringLiteral("StAdd")] = sc.stAdd;
+        o[QString::fromLatin1(k.name)] = so;
+    }
+    JsonFile::write(path, o);
+}
+
+// --------------------------------------------------------------- records.json
+
+void Settings::loadRecords()
+{
+    const QString path = AppPaths::settingsFile(QStringLiteral("records.json"));
+    const int errorsBefore = m_loadErrors.size();
+    QJsonObject o = readChecked(path);
+    const bool readFailed = m_loadErrors.size() > errorsBefore;
+    const RecordSetup d;
+
+    // Ngưỡng dưới nhỏ để thử ngắt file / xoá file cũ mà không phải chờ hàng giờ.
+    // write_max_size kẹp dưới 4 GB vì header ghi dung lượng file bằng u32;
+    // write_max_time kẹp dưới 1000 giờ vì thời điểm trong file là ms u32.
+    m_records.fullVideoR = JsonFile::b(o, QStringLiteral("write_full_video_r"), d.fullVideoR);
+    m_records.fullVideoI = JsonFile::b(o, QStringLiteral("write_full_video_i"), d.fullVideoI);
+    m_records.rawIq      = JsonFile::b(o, QStringLiteral("write_raw_iq"), d.rawIq);
+    m_records.maxSizeGb  = qBound(0.001, JsonFile::num(o, QStringLiteral("write_max_size"), d.maxSizeGb), 3.9);
+    m_records.maxTimeH   = qBound(0.001, JsonFile::num(o, QStringLiteral("write_max_time"), d.maxTimeH), 1000.0);
+    m_records.totalCapGb = qMax(0.01, JsonFile::num(o, QStringLiteral("total_cap"), d.totalCapGb));
+
+    static const char *const kKeys[] = {"write_full_video_r", "write_full_video_i", "write_raw_iq",
+                                        "write_max_size", "write_max_time", "total_cap"};
+    bool missing = false;
+    for (const char *k : kKeys)
+        missing = missing || !o.contains(QLatin1String(k));
+    // Như statuserror.json: file hỏng thì để nguyên cho kỹ sư sửa, thiếu file
+    // hay thiếu khoá thì bổ sung mặc định, giữ nguyên giá trị đang có.
+    if (readFailed || !missing)
+        return;
+    o[QStringLiteral("write_full_video_r")] = m_records.fullVideoR;
+    o[QStringLiteral("write_full_video_i")] = m_records.fullVideoI;
+    o[QStringLiteral("write_raw_iq")]       = m_records.rawIq;
+    o[QStringLiteral("write_max_size")]     = m_records.maxSizeGb;
+    o[QStringLiteral("write_max_time")]     = m_records.maxTimeH;
+    o[QStringLiteral("total_cap")]          = m_records.totalCapGb;
+    JsonFile::write(path, o);
 }

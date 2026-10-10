@@ -47,21 +47,17 @@ QByteArray build(const Frame &frame, bool bigEndian)
 
 bool parse(const QByteArray &raw, Frame *out, bool bigEndian)
 {
-    if (!out || raw.size() < kFixedBytes)
+    if (!out || raw.size() < 8)
         return false;
     const char *p = raw.constData();
     if (readU32(p, bigEndian) != kHeader)
         return false;
 
-    const quint32 length = readU32(p + 8, bigEndian);
-    // Gói dài hơn buffer là gói cụt; dài hơn 64 KiB thì chắc chắn sai thứ tự byte.
-    if (length < quint32(kFixedBytes) || length > quint32(raw.size()) || length > 65535u)
-        return false;
-
+    // Trường length không đọc tới: datagram UDP đã tự có ranh giới.
     out->category = readU32(p + 4, bigEndian);
-    out->serial = readU32(p + 12, bigEndian);
-    out->time = readU32(p + 16, bigEndian);
-    out->data = raw.mid(20, int(length) - kFixedBytes);
+    out->serial = raw.size() >= 16 ? readU32(p + 12, bigEndian) : 0;
+    out->time = raw.size() >= 20 ? readU32(p + 16, bigEndian) : 0;
+    out->data = raw.size() > 20 ? raw.mid(20) : QByteArray();
     return true;
 }
 
@@ -93,6 +89,14 @@ bool unpackFields(const QByteArray &data, quint32 *fields, int count, bool bigEn
     for (int i = 0; i < count; ++i)
         fields[i] = readU32(data.constData() + i * 4, bigEndian);
     return true;
+}
+
+int unpackAvailable(const QByteArray &data, quint32 *fields, int count, bool bigEndian)
+{
+    const int n = qMin(count, int(data.size() / 4));
+    for (int i = 0; i < n; ++i)
+        fields[i] = readU32(data.constData() + i * 4, bigEndian);
+    return qMax(0, n);
 }
 
 } // namespace Proto

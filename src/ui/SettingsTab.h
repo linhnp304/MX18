@@ -18,6 +18,8 @@ public:
 
     void setConnected(bool connected);
     bool isConnected() const { return m_connected; }
+    // Đang ghi lưu hoặc đang phát lại: khoá nút "Thoát phần mềm".
+    void setRecordBusy(bool busy);
 
 signals:
     void displayChanged();       // panel 1 phải vẽ lại
@@ -29,6 +31,7 @@ private:
     void buildUi();
     void loadFromSettings();
     void pushToSettings();
+    void updateExitEnabled();
 
     QCheckBox *m_showMap = nullptr;
     QCheckBox *m_showAirRoutes = nullptr;
@@ -50,5 +53,6 @@ private:
     QPushButton *m_exitBtn = nullptr;
 
     bool m_connected = false;
+    bool m_recordBusy = false;
     bool m_loading = false;
 };

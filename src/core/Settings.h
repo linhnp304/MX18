@@ -15,6 +15,7 @@
 //   statuserror.json - ngưỡng báo lỗi của các giá trị trạng thái MH
 //   params.json      - tham số đài (tab "Params", giai đoạn sau)
 //   connect.json     - cấu hình cổng gửi/nhận (xem net/LinkConfig.h)
+//   records.json     - lựa chọn ghi lưu (đọc lại mỗi lần bắt đầu ghi lưu)
 //
 // Quy tắc chung: thiếu file thì tạo mặc định, có file mà đọc lỗi thì giữ giá trị
 // mặc định và đẩy một dòng [Lỗi] vào "Thông báo hệ thống" (xem takeLoadErrors).
@@ -64,6 +65,14 @@ struct Setups {
     double radarLon = 105.813417;
 };
 
+// Hệ số hiệu chỉnh một trường STATUS_MH (step-07): giá trị hiển thị =
+// [giá trị theo giao thức gốc] / StDiv + StAdd, rồi mới so với ngưỡng.
+struct StatusScale {
+    double stDiv = 1.0;
+    double stAdd = 0.0;
+    double apply(double v) const { return v / stDiv + stAdd; }
+};
+
 // Ngưỡng báo lỗi cho cửa sổ "Trạng thái MH" (./settings/statuserror.json).
 struct StatusLimits {
     double min50V = 44.0;
@@ -73,6 +82,16 @@ struct StatusLimits {
     int minCs = 60;     // công suất phát tối thiểu khi đang nối phát
     int maxT  = 90;     // nhiệt độ tối đa
     int maxH  = 99;     // độ ẩm tối đa
+
+    // Hệ số theo tên trường của gói, mặc định anh Linh đưa trong step-07. Ba
+    // mức nguồn vẫn chia 10 (-10) theo giao thức gốc trước khi áp hệ số.
+    StatusScale k2Nguon50V{3.682, 0.0};
+    StatusScale k2Nguon5V{16.84, 0.0};
+    StatusScale k2NguonM5V{10.2, 0.0};
+    StatusScale k5Tx1Cs{1.0, -127.0};
+    StatusScale k5Tx1Hssd{1.0, -127.0};
+    StatusScale k6Tx2Cs{1.0, -127.0};
+    StatusScale k6Tx2Hssd{1.0, -127.0};
 };
 
 // Luồng SCH-VQ (gửi ASTERIX cho VQ) — khoá trong setupadmin.json, chưa có giao
@@ -104,6 +123,18 @@ struct MhTrackerSetup {
     int trackIdStart = 3001;
 };
 
+// Ghi lưu (./settings/records.json, step-07). Chưa có giao diện: kỹ sư sửa
+// file, lần bấm "Bắt đầu ghi lưu" kế tiếp có tác dụng, không phải chạy lại.
+// Dung lượng tính theo GB nhị phân (1 GB = 1024³ byte) như MB trên tab "Ghi lưu".
+struct RecordSetup {
+    bool fullVideoR = false;           // write_full_video_r: false = chỉ 24 byte đầu
+    bool fullVideoI = true;            // write_full_video_i
+    bool rawIq = false;                // write_raw_iq: RAW_IQ ~7,7 MB/s, anh Linh chốt không ghi
+    double maxSizeGb = 2.0;            // write_max_size: ngắt sang file mới
+    double maxTimeH = 2.0;             // write_max_time
+    double totalCapGb = 500.0;         // total_cap: tổng ./records, quá thì xoá file cũ
+};
+
 struct NetNode {
     QString name;
     QString address;
@@ -130,6 +161,9 @@ public:
     QString engineerPassword() const { return m_engineerPassword; }
     const VqSetup &vq() const { return m_vq; }
     const MhTrackerSetup &mhTracker() const { return m_mhTracker; }
+    const RecordSetup &records() const { return m_records; }
+    // Đọc lại records.json; lỗi vào takeLoadErrors() như lúc khởi động.
+    void loadRecords();
 
     void saveSetups();
     void saveSwInfo();
@@ -165,5 +199,6 @@ private:
     QString m_engineerPassword = QStringLiteral("X18");
     VqSetup m_vq;
     MhTrackerSetup m_mhTracker;
+    RecordSetup m_records;
     QStringList m_loadErrors;
 };

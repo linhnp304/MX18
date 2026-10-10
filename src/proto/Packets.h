@@ -281,9 +281,9 @@ enum Field {
     Count
 };
 
-// Trường bắt buộc phải có: hệ thống MH bỏ bớt phần dự phòng / thông tin chùm
-// thì gói vẫn dùng được.
-constexpr int kMinCount = Fuellevel + 1;
+// Trường bắt buộc phải có để đặt được điểm dấu. Quy tắc nhận của step-07: gói
+// cụt lấy được trường nào hay trường đó, phần thiếu giữ mặc định của defaults().
+constexpr int kMinCount = Range + 1;
 
 const quint32 *defaults();
 
@@ -342,6 +342,57 @@ enum Field {
 };
 
 } // namespace AlarmHead
+
+// ------------------------------------- giai đoạn 7: gói nhận, chưa dùng tới
+// Anh Linh tra tài liệu và đối chiếu file 20261008_02.pcapng: MX18 nhận về nhưng
+// chưa hiển thị (thông tin GPS đã có trong STATUS_MH); giữ sẵn giao thức.
+
+// Góc anten (0x2032), khoảng 16 × 2,5 ms một gói, có checksum.
+namespace SectorI {
+
+enum Field {
+    Sector = 0,       // 0..35999, 0,01 độ
+    Count
+};
+
+} // namespace SectorI
+
+// GPS riêng (0x6020): 40 byte = 5 trường đầu + 5 trường, không checksum.
+namespace GpsData {
+
+enum Field {
+    Heading = 0,      // 0..35999, 0,01 độ — chỉ đúng khi Status = 2
+    Latitude,         // độ × 10000
+    Longitude,        // độ × 10000
+    Altitude,         // mét
+    Status,           // 0 mất tín hiệu, 1 có lat/lng, 2 có cả hướng
+    Count
+};
+
+struct Info {
+    double headingDeg = 0.0;
+    double lat = 0.0;
+    double lon = 0.0;
+    int altitudeM = 0;
+    int status = 0;
+};
+
+Info decode(const quint32 *fields);
+
+} // namespace GpsData
+
+// Ngày giờ build firmware MH (0x99810): 48 byte = 5 + 6 trường + checksum.
+namespace MhFwVersion {
+
+enum Field {
+    Year = 0, Month, Day, Hour, Minute, Second,
+    Count
+};
+
+// "yyyy-MM-dd HH:mm:ss", rỗng nếu ngày giờ vô nghĩa.
+QString text(const quint32 *fields);
+
+} // namespace MhFwVersion
 
 // Đường quét: azimuth 0..4095 trên một vòng tròn.
 namespace Video {

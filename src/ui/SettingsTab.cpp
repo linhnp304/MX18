@@ -131,13 +131,25 @@ void SettingsTab::buildUi()
     lay->addSpacing(6);
     m_connectBtn = new QPushButton(QStringLiteral("Kết nối hệ thống"), page);
     m_connectBtn->setMinimumHeight(28);
-    m_exitBtn = new QPushButton(QStringLiteral("Thoát phần mềm"), page);
     lay->addWidget(m_connectBtn);
-    lay->addWidget(m_exitBtn);
     lay->addStretch(1);
 
     scroll->setWidget(page);
-    outer->addWidget(scroll);
+    outer->addWidget(scroll, 1);
+
+    // Nằm ngoài vùng cuộn, dưới cùng tab, sát cửa sổ biên độ (step-07): luôn
+    // thấy ở cùng một chỗ và xa các nút hay bấm nên khó bấm nhầm. Chữ to hơn
+    // một cỡ, đậm, đỏ tối; phải có luật :disabled riêng vì màu đặt trong
+    // stylesheet đè cả trạng thái bị khoá của Theme.
+    m_exitBtn = new QPushButton(QStringLiteral("Thoát phần mềm"), this);
+    m_exitBtn->setMinimumHeight(30);
+    m_exitBtn->setStyleSheet(QStringLiteral("QPushButton { color:#c62828; font-weight:bold; font-size:%1pt; }"
+                                            "QPushButton:disabled { color:#5a4245; }")
+                                 .arg(font().pointSizeF() + 1.0));
+    auto *exitRow = new QVBoxLayout;
+    exitRow->setContentsMargins(8, 4, 8, 6);
+    exitRow->addWidget(m_exitBtn);
+    outer->addLayout(exitRow);
 
     // --- nối tín hiệu: mọi thay đổi đều lưu ngay và vẽ lại bản đồ
     const auto onChange = [this] {
@@ -232,6 +244,18 @@ void SettingsTab::setConnected(bool connected)
     m_connectBtn->setStyleSheet(connected
         ? QStringLiteral("color:#ffd24d;font-weight:bold;")
         : QStringLiteral("color:#7ee08a;font-weight:bold;"));
-    // Đang kết nối thì không cho thoát: phải dừng thu phát trước.
-    m_exitBtn->setEnabled(!connected);
+    updateExitEnabled();
+}
+
+void SettingsTab::setRecordBusy(bool busy)
+{
+    m_recordBusy = busy;
+    updateExitEnabled();
+}
+
+void SettingsTab::updateExitEnabled()
+{
+    // Đang kết nối, đang ghi lưu hay đang phát lại thì không cho thoát: phải
+    // dừng việc đó trước để file ghi lưu đóng đàng hoàng.
+    m_exitBtn->setEnabled(!m_connected && !m_recordBusy);
 }

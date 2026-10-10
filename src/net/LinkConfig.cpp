@@ -25,13 +25,15 @@ struct DefaultRow {
     int format;
 };
 
-// 9 dòng của docs/step-02.md, Data-RAW của giai đoạn 3 và hai dòng UDP của luồng
-// SCN (giai đoạn 5 chốt, analysis-results file 04 mục 2); không cho thêm/xoá
-// dòng trên giao diện.
+// 9 dòng của docs/step-02.md, Data-RAW của giai đoạn 3, hai dòng UDP của luồng
+// SCN (giai đoạn 5 chốt, analysis-results file 04 mục 2) và Params-Status: hệ
+// thống MH thật gửi STATUS_PARAMS + phản hồi BUPHABD ra cổng 26812 chứ không
+// phải 26800 (bắt gói 2026-10-08). Không cho thêm/xoá dòng trên giao diện.
 const DefaultRow kDefaultRows[] = {
     {"Video-R",      LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26801, "0.0.0.0",         0,     LinkEntry::Dataframe},
     {"Video-I",      LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26802, "0.0.0.0",         0,     LinkEntry::Dataframe},
     {"Data-Status",  LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26800, "0.0.0.0",         0,     LinkEntry::Dataframe},
+    {"Params-Status", LinkEntry::Recv,    LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154", 26812, "0.0.0.0",         0,     LinkEntry::Dataframe},
     {"Data-RAW",     LinkEntry::Recv,     LinkEntry::Udp, LinkEntry::ServerOrUnicast,   "192.168.232.154", 24018, "0.0.0.0",         0,     LinkEntry::RawIq},
     {"Cmd-User",     LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26810, LinkEntry::Dataframe},
     {"Cmd-Admin",    LinkEntry::Send,     LinkEntry::Udp, LinkEntry::ClientOrBroadcast, "192.168.232.154",     0, "192.168.232.255", 26811, LinkEntry::Dataframe},
@@ -142,9 +144,11 @@ LinkConfig LinkConfig::load(QString *error, QString *note)
 
     // File của giai đoạn 2–5 có một khoá big_endian chung cho mọi dòng. Dòng của
     // hệ thống MH giữ đúng giá trị đó; các dòng X18-* trước đây không chạy được
-    // nên lấy thẳng mặc định của định dạng.
+    // nên lấy thẳng mặc định của định dạng. Thiếu cả khoá chung thì mọi dòng theo
+    // mặc định (hệ thống MH little-endian), không ngầm lấy big-endian của bản cũ.
     const bool legacyKey = root.contains(QStringLiteral("big_endian"));
-    const bool legacyBigEndian = JsonFile::b(root, QStringLiteral("big_endian"), true);
+    const bool legacyBigEndian = JsonFile::b(root, QStringLiteral("big_endian"),
+                                             LinkEntry::defaultBigEndian(LinkEntry::Dataframe));
     bool migrate = legacyKey;
     QStringList errors;
 
@@ -181,10 +185,10 @@ LinkConfig LinkConfig::load(QString *error, QString *note)
         }
 
         if (o.contains(QStringLiteral("big_endian"))) {
-            e.bigEndian = JsonFile::b(o, QStringLiteral("big_endian"), true);
+            e.bigEndian = JsonFile::b(o, QStringLiteral("big_endian"), LinkEntry::defaultBigEndian(e.format));
         } else {
             const bool mhLine = (e.format == LinkEntry::Dataframe || e.format == LinkEntry::RawIq);
-            e.bigEndian = mhLine ? legacyBigEndian : LinkEntry::defaultBigEndian(e.format);
+            e.bigEndian = (mhLine && legacyKey) ? legacyBigEndian : LinkEntry::defaultBigEndian(e.format);
             migrate = true;
         }
         cfg.entries.append(e);
@@ -263,5 +267,5 @@ const LinkEntry *LinkConfig::find(const QString &category) const
 bool LinkConfig::bigEndianFor(const QString &category) const
 {
     const LinkEntry *e = find(category);
-    return e ? e->bigEndian : true;
+    return e ? e->bigEndian : LinkEntry::defaultBigEndian(LinkEntry::Dataframe);
 }

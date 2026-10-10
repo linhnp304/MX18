@@ -7,6 +7,10 @@ namespace Theme {
 
 QString styleSheet()
 {
+    // QTabBar::tab: lề ngang 8px vừa đủ để bốn tab của panel 2 nằm lọt trong bề
+    // ngang panel; rộng hơn là Qt cuộn thanh tab và tab "Danh sách" bị cắt mất
+    // chữ. Chú thích để ngoài chuỗi QSS để bản mã không chú thích
+    // (tools/code_no_comment) bỏ được.
     return QStringLiteral(R"QSS(
 QWidget {
     background: #14171a;
@@ -39,8 +43,6 @@ QTabBar::tab {
     background: #21262c;
     border: 1px solid #353d46;
     border-bottom: none;
-    /* Lề ngang vừa đủ để bốn tab của panel 2 nằm lọt trong bề ngang panel;
-       rộng hơn là Qt cuộn thanh tab và tab "Danh sách" bị cắt mất chữ. */
     padding: 5px 8px;
     color: #9aa5b1;
 }

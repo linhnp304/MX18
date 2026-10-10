@@ -19,6 +19,19 @@ QString fixed(double v, int decimals)
     return QString::number(v, 'f', decimals);
 }
 
+double round1(double v)
+{
+    return std::round(v * 10.0) / 10.0;
+}
+
+// Công suất qua hệ số mặc định (StDiv = 1, StAdd = -127) vẫn là số nguyên; kỹ sư
+// đặt StDiv khác 1 thì hiện thêm một chữ số lẻ.
+QString scaled(double v)
+{
+    const double r = round1(v);
+    return (r == std::floor(r)) ? QString::number(qint64(r)) : fixed(r, 1);
+}
+
 } // namespace
 
 MhStatusPopup::MhStatusPopup(QWidget *parent)
@@ -133,14 +146,16 @@ void MhStatusPopup::setStatus(const quint32 *f, quint32 serial)
     const StatusLimits &lim = Settings::instance().statusLimits();
     m_anyError = false;
 
-    // --- K2: ba mức nguồn ghi ở đơn vị 0,1 V
-    const double v50 = f[StatusMh::K2Nguon50V] / 10.0;
+    // --- K2: ba mức nguồn ghi ở đơn vị 0,1 V, rồi qua hệ số StDiv/StAdd của
+    // statuserror.json; làm tròn 1 chữ số trước khi so ngưỡng (step-07) để số
+    // hiện ra và lỗi báo ra luôn khớp nhau.
+    const double v50 = round1(lim.k2Nguon50V.apply(f[StatusMh::K2Nguon50V] / 10.0));
     setValue(m_k2_50v, fixed(v50, 1), v50 < lim.min50V || v50 > lim.max50V);
 
-    const double v5 = f[StatusMh::K2Nguon5V] / 10.0;
+    const double v5 = round1(lim.k2Nguon5V.apply(f[StatusMh::K2Nguon5V] / 10.0));
     setValue(m_k2_5v, fixed(v5, 1), v5 < lim.min5V || v5 > lim.max5V);
 
-    const double vm5 = f[StatusMh::K2NguonM5V] / -10.0;
+    const double vm5 = round1(lim.k2NguonM5V.apply(f[StatusMh::K2NguonM5V] / -10.0));
     setValue(m_k2_m5v, fixed(vm5, 1),
              std::fabs(vm5) < lim.min5V || std::fabs(vm5) > lim.max5V);
 
@@ -156,13 +171,15 @@ void MhStatusPopup::setStatus(const quint32 *f, quint32 serial)
     const StatusMh::Field kH[2]    = {StatusMh::K6Tx2Doam, StatusMh::K5Tx1Doam};
     const StatusMh::Field kStc[2]  = {StatusMh::K6StcBack, StatusMh::K5StcBack};
     const StatusMh::Field kCtr[2]  = {StatusMh::K6CtrBack, StatusMh::K5CtrBack};
+    const StatusScale *kCsScale[2]   = {&lim.k6Tx2Cs, &lim.k5Tx1Cs};
+    const StatusScale *kHssdScale[2] = {&lim.k6Tx2Hssd, &lim.k5Tx1Hssd};
 
     for (int c = 0; c < 2; ++c) {
         // Công suất thấp chỉ là lỗi khi đang nối phát; lúc tắt phát thì đương
-        // nhiên bằng 0.
-        setValue(m_tx_cs[c], QString::number(f[kCs[c]]),
-                 m_transmitOn && int(f[kCs[c]]) < lim.minCs);
-        setValue(m_tx_hssd[c], QString::number(f[kHssd[c]]), false);
+        // nhiên thấp.
+        const double cs = kCsScale[c]->apply(double(f[kCs[c]]));
+        setValue(m_tx_cs[c], scaled(cs), m_transmitOn && cs < lim.minCs);
+        setValue(m_tx_hssd[c], scaled(kHssdScale[c]->apply(double(f[kHssd[c]]))), false);
         setValue(m_tx_t[c], QString::number(f[kT[c]]), int(f[kT[c]]) > lim.maxT);
         setValue(m_tx_h[c], QString::number(f[kH[c]]), int(f[kH[c]]) > lim.maxH);
         setValue(m_tx_stc[c], QString::number(f[kStc[c]]), false);

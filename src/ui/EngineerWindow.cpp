@@ -25,6 +25,7 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <utility> // std::as_const — MSVC không kéo theo qua header Qt
 
 namespace {
@@ -227,21 +228,28 @@ void EngineerWindow::wireBlock(CommandBlock *block)
 
 void EngineerWindow::applyFrame(quint32 category, quint32 serial, const quint32 *fields, int count)
 {
+    // Quy tắc nhận của step-07: gói dài hơn thì bỏ phần thừa (từ checksum), gói
+    // cụt thì lấy được trường nào hay trường đó.
     if (category == Proto::CatStatusCalib) {
-        if (count >= StatusCalib::Count)
-            m_adminTab->applyCalibStatus(fields, serial);
+        QVector<quint32> f(StatusCalib::Count, 0);
+        std::copy_n(fields, qMin(count, int(f.size())), f.begin());
+        m_adminTab->applyCalibStatus(f.constData(), serial);
         return;
     }
     if (category == Proto::CatStatusParams) {
-        if (count >= StatusParams::kCount)
-            m_paramsTab->applyParams(fields, serial);
+        QVector<quint32> f(StatusParams::kCount, 0);
+        std::copy_n(fields, qMin(count, int(f.size())), f.begin());
+        m_paramsTab->applyParams(f.constData(), serial);
         return;
     }
     for (CommandBlock *b : std::as_const(m_blocks)) {
-        if (b->backCategory() == category && count >= b->fields().size()) {
-            b->applyBack(fields, serial);
-            return;
-        }
+        if (b->backCategory() != category)
+            continue;
+        // Trường thiếu lấy đúng giá trị đang đặt để không tô đỏ oan.
+        QVector<quint32> f = b->fields();
+        std::copy_n(fields, qMin(count, int(f.size())), f.begin());
+        b->applyBack(f.constData(), serial);
+        return;
     }
 }
 
@@ -315,7 +323,7 @@ QWidget *EngineerWindow::buildConnectTab()
 
     auto *linkBtns = new QHBoxLayout;
     auto *saveLinkBtn = new QPushButton(QStringLiteral("Lưu cấu hình"), linkBox);
-    // Không có thêm/xoá dòng: đủ 12 loại dữ liệu, cần khác thì kỹ sư sửa file.
+    // Không có thêm/xoá dòng: đủ các loại dữ liệu mặc định, cần khác thì kỹ sư sửa file.
     auto *hint = new QLabel(QStringLiteral("Đổi xong phải khởi động lại phần mềm. Định dạng và "
                                            "thứ tự byte sửa trong settings/connect.json."), linkBox);
     hint->setStyleSheet(QStringLiteral("color:#8a95a1;font-style:italic;"));
@@ -324,8 +332,9 @@ QWidget *EngineerWindow::buildConnectTab()
     linkBtns->addWidget(saveLinkBtn);
     linkLay->addLayout(linkBtns);
     // Hệ số giãn = số dòng muốn thấy trừ đi sàn một dòng của relaxTable(), nhờ
-    // vậy ở kích thước tự nhiên phần dư chia ra đúng 12 dòng và 8 dòng.
-    lay->addWidget(linkBox, 11);
+    // vậy ở kích thước tự nhiên phần dư chia ra đúng số dòng cổng và 8 dòng nút.
+    const int linkRows = int(LinkConfig::categoryNames().size());
+    lay->addWidget(linkBox, linkRows - 1);
 
     // --- Group: danh sách các nút mạng
     auto *nodeBox = new QGroupBox(QStringLiteral("Danh sách các nút mạng"), page);
@@ -355,8 +364,8 @@ QWidget *EngineerWindow::buildConnectTab()
 
     fillLinkTable();
     fillNodeTable();
-    // Đủ 12 dòng cấu hình cổng (không cho thêm/xoá) và 8 dòng nút mạng.
-    fitTable(m_links, 12);
+    // Đủ các dòng cấu hình cổng (không cho thêm/xoá) và 8 dòng nút mạng.
+    fitTable(m_links, linkRows);
     fitTable(m_nodes, 8);
 
     connect(saveLinkBtn, &QPushButton::clicked, this, &EngineerWindow::saveLinks);

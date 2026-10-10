@@ -73,7 +73,8 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
   (`big_endian`) cho từng dòng; tab "Connect" hiện hai cột này nhưng không cho
   sửa. File của bản cũ được tự chuyển sang dạng mới và bổ sung các dòng còn thiếu.
 - **X18-SCN** (TCP Server 10555): MX18 đóng vai thiết bị SCN cho máy "PC" — gửi
-  khối Start, trả lời lệnh và keepalive, mỗi lúc một PC.
+  khối Start, trả lời lệnh và keepalive, mỗi lúc một PC; PC im lặng quá 10 giây (mất kết
+  nối đột ngột) thì bỏ phiên để PC nối lại được ngay.
 - **X18-SCN-R / X18-SCN-S** (UDP, gói nhị phân "Cf" little-endian): giải mã gói
   PC gửi đến; mỗi điểm dấu MH nhận được gửi sang PC dạng Cf loại 12 (Plot).
 - Cửa sổ **"Trạng thái SCN"** (panel 3) tạm hiện trạng thái phiên làm việc với PC.
@@ -100,6 +101,28 @@ chạy trên máy đích, xem mục [Thư mục chạy](#thư-mục-chạy).
   10–333 m/s thành quỹ đạo, số hiệu từ 3001; vòng nào không có điểm dấu trong cửa
   sổ dự đoán thì ngoại suy, quá 3 vòng thì xoá. Chu kỳ quét đo theo đường quét
   VIDEO_I (mặc định 10 giây). Tham số ở các khoá `mh_*` của `setupadmin.json`.
+
+**Giai đoạn 7** — chỉnh theo hệ thống thật, ghi lưu / phát lại (đang làm):
+
+- Gói nhận về **không còn tin trường `length`** (máy XL MH để 0 hoặc ghi sai): chỉ
+  kiểm tra header và category, lấy cả datagram; dài hơn đặc tả thì bỏ phần thừa,
+  ngắn hơn thì lấy được trường nào hay trường đó. Gói MX18 gửi đi vẫn đúng khuôn
+  (có length và checksum). STATUS_MH là 128 byte, **không có checksum**.
+- Giao thức viết sẵn cho ba gói nhận về nhưng chưa dùng: **SECTOR_I** (`0x2032`),
+  **GPS_DATA** (`0x6020`, không checksum), **MH_FW_VERSION** (`0x99810`).
+- Nút **"Đặt theo GPS"** (cửa sổ "Tọa độ tâm đài"): lấy `GpsLat`/`GpsLng` của gói
+  STATUS_MH gần nhất, dời tâm đài, căn về giữa và lưu vào `setups.json`.
+- Hệ số **StDiv / StAdd** cho các trường nguồn và công suất của STATUS_MH
+  (`statuserror.json`): giá trị hiển thị = giá trị / StDiv + StAdd, rồi mới so ngưỡng.
+- Nút **"Thoát phần mềm"** nằm dưới cùng tab "Cài đặt", chữ đỏ đậm; bị khoá khi
+  đang kết nối hoặc đang ghi lưu.
+- **Ghi lưu** (tab "Ghi lưu"): nút "Bắt đầu ghi lưu" / "Dừng ghi lưu" ghi mọi gói
+  nhận được vào `./records/yyyy/MM/yyyyMMdd_HHmmss.rec` trên một luồng riêng (nhịp
+  250 ms), cập nhật tên file, thời gian ghi, số gói, dung lượng mỗi 200 ms. Tự ngắt
+  sang file mới theo dung lượng / thời gian, tự xoá file cũ nhất khi tổng
+  `./records` vượt `total_cap` (mỗi file xoá một dòng trong
+  `./records/deletted_history.log`). Lỗi ghi (ổ đầy, không có quyền) chỉ dừng ghi
+  lưu và báo `[Lỗi]`, phần mềm vẫn chạy.
 
 ## Yêu cầu biên dịch
 
@@ -161,7 +184,7 @@ MX18(.exe)
 ├── maps/mc/        dữ liệu bản đồ số (shapefile, Diadanh.txt, Airport2.dat)
 ├── resources/      FlashScreen.jpg, logo.png, RadarIcon.ico
 ├── settings/       swinfo.json, setups.json, checkip.json, connect.json,
-│                   setupadmin.json, statuserror.json, params.json
+│                   setupadmin.json, statuserror.json, params.json, records.json
 ├── logs/           log và thông báo hệ thống
 └── records/        file ghi lưu
 ```
@@ -178,7 +201,8 @@ MX18(.exe)
 | `checkip.json` | Danh sách nút mạng cần ping: `name`, `address`, `kind` (0 không cảnh báo, 1 cảnh báo, 2 báo lỗi) |
 | `connect.json` | Bảng cổng gửi/nhận cho từng loại dữ liệu; mỗi dòng có `format` (`dataframe`, `raw_iq`, `scn_text`, `scn_cf`, `asterix`) và `big_endian` — hai khoá này chỉ sửa trong file |
 | `setupadmin.json` | Thiết lập mức kỹ sư: mật khẩu (mặc định `X18`; ô "Khóa điều khiển" không lưu — mỗi lần mở cửa sổ đều khoá sẵn). Các khoá chưa có giao diện, sửa trong file: luồng SCH-VQ `vq_range_change` (2.0 = LSB chuẩn ASTERIX), `vq_output_p18m` (false = SP kiểu ELM-2288), `vq_sac`/`vq_sic` (148/101), `vq_sector_source` (`VIDEO_R`/`VIDEO_I`), `vq_send_tre`, `vq_site_height_m`; bộ bám quỹ đạo từ điểm dấu MH `mh_*` (số vòng khởi tạo, vận tốc giới hạn, số vòng ngoại suy, chu kỳ quét mặc định, cửa sổ dự đoán, số hiệu bắt đầu) |
-| `statuserror.json` | Ngưỡng báo lỗi của cửa sổ "Trạng thái MH": `Min50V`, `Max50V`, `Min5V`, `Max5V`, `MinCs`, `MaxT`, `MaxH` |
+| `statuserror.json` | Ngưỡng báo lỗi của cửa sổ "Trạng thái MH": `Min50V`, `Max50V`, `Min5V`, `Max5V`, `MinCs`, `MaxT`, `MaxH`; hệ số hiệu chỉnh `{"StDiv": .., "StAdd": ..}` theo tên trường gói STATUS_MH: `k2_nguon_50v` (3.682 / 0), `k2_nguon_5v` (16.84 / 0), `k2_nguon_m5v` (10.2 / 0), `k5_tx1_cs`, `k5_tx1_hssd`, `k6_tx2_cs`, `k6_tx2_hssd` (1 / -127). Ba mức nguồn vẫn chia 10 (-10) theo giao thức gốc trước khi áp hệ số, làm tròn 1 chữ số rồi mới so ngưỡng |
+| `records.json` | Ghi lưu, đọc lại mỗi lần bấm "Bắt đầu ghi lưu": `write_full_video_r` (false = VIDEO_R chỉ ghi 24 byte đầu), `write_full_video_i` (true), `write_raw_iq` (false = không ghi Data-RAW), `write_max_size` (2.0 GB, tối đa 3.9), `write_max_time` (2.0 giờ), `total_cap` (500.0 GB). GB tính theo 1024³ byte |
 | `params.json` | Tham số đài (để dành cho giai đoạn sau; bảng tham số của tab "Params" lấy trực tiếp từ gói `STATUS_PARAMS`) |
 
 Thiếu file nào thì phần mềm tự tạo file đó với giá trị mặc định. File **đã có mà
@@ -201,10 +225,11 @@ phải chạy lại phần mềm.
   để đổi màu theo trạng thái và không phụ thuộc file ảnh.
 - **Gói tin**: khung cố định 24 byte (`header`, `category`, `length`, `serial`,
   `time`, `checksum`) bọc quanh `data_fields[]`, mỗi trường 4 byte. Thứ tự byte
-  mặc định **big-endian**, đổi được bằng khoá `big_endian` của từng dòng trong
-  `connect.json`. Các luồng X18-* không theo khung này: ASTERIX luôn big-endian,
-  gói "Cf" của SCN luôn little-endian.
-  `checksum` hiện gán 0 và chưa kiểm tra.
+  mặc định **little-endian** như hệ thống MH thật, đổi được bằng khoá `big_endian`
+  của từng dòng trong `connect.json`. Các luồng X18-* không theo khung này:
+  ASTERIX luôn big-endian, gói "Cf" của SCN luôn little-endian.
+  `checksum` hiện gán 0 và chưa kiểm tra. Gói có `length` = 0 (máy XL MH không
+  điền) được hiểu là cả datagram.
 - **Video**: đường quét MH đến khoảng 400 gói/giây. Mỗi tia được vẽ bằng một
   phép biến đổi quay + giãn của một ảnh 600×1 điểm — rẻ hơn nhiều so với 600 đoạn
   thẳng cho mỗi tia — vào một lớp ARGB riêng; lớp này mờ dần bằng phép **trừ**

@@ -76,6 +76,11 @@ set(MX18_SOURCES
     src/track/MhTracker.h
     src/track/TrackEntry.h
 
+    src/record/RecordFormat.cpp
+    src/record/RecordFormat.h
+    src/record/Recorder.cpp
+    src/record/Recorder.h
+
     src/ui/Theme.cpp
     src/ui/Theme.h
     src/ui/IconFactory.cpp
@@ -98,6 +103,8 @@ set(MX18_SOURCES
     src/ui/ControlPanel.h
     src/ui/SettingsTab.cpp
     src/ui/SettingsTab.h
+    src/ui/RecordTab.cpp
+    src/ui/RecordTab.h
     src/ui/ControlTab.cpp
     src/ui/ControlTab.h
     src/ui/ControlWidgets.cpp
